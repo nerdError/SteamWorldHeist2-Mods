@@ -73,12 +73,27 @@ public sealed class RandomizerOptions
     public bool ShufflePerks { get; set; }
     public Mode PerkMode { get; set; } = Mode.Balanced;
 
+    public bool RandomizeCrewStats { get; set; }
+    public Mode CrewStatsMode { get; set; } = Mode.Balanced;
+
+    /// <summary>What player weapons shoot (also changes range and arcs). Balanced: inside the weapon class.</summary>
+    public bool ShuffleProjectiles { get; set; }
+    public Mode ProjectileMode { get; set; } = Mode.Balanced;
+
     // Cosmetic.
     public bool ShuffleDialogue { get; set; }
     /// <summary>True: lines only move inside their own conversation. False: across the whole game.</summary>
     public bool DialogueWithinConversation { get; set; } = true;
     public bool ShuffleBarks { get; set; }
     public bool ShuffleNpcLooks { get; set; }
+    public bool ShuffleCrewHats { get; set; }
+    public bool ShuffleWeaponLooks { get; set; }
+    public Mode WeaponLookMode { get; set; } = Mode.Balanced;
+    public bool ShuffleMusic { get; set; }
+    public bool ShuffleEnvironments { get; set; }
+    public Mode EnvironmentMode { get; set; } = Mode.Balanced;
+    public bool ShuffleNames { get; set; }
+    public Mode NameMode { get; set; } = Mode.Balanced;
 
     static Mode ModeOf(ModSettings s, string id) => s.String(id) == "chaos" ? Mode.Chaos : Mode.Balanced;
 
@@ -110,6 +125,18 @@ public sealed class RandomizerOptions
         DialogueWithinConversation = s.String("dialogueMode") != "all",
         ShuffleBarks = s.Bool("barks"),
         ShuffleNpcLooks = s.Bool("npcs"),
+        RandomizeCrewStats = s.Bool("crewStats"),
+        CrewStatsMode = ModeOf(s, "crewStatsMode"),
+        ShuffleProjectiles = s.Bool("projectiles"),
+        ProjectileMode = ModeOf(s, "projectileMode"),
+        ShuffleCrewHats = s.Bool("crewHats"),
+        ShuffleWeaponLooks = s.Bool("weaponLooks"),
+        WeaponLookMode = ModeOf(s, "weaponLookMode"),
+        ShuffleMusic = s.Bool("music"),
+        ShuffleEnvironments = s.Bool("environments"),
+        EnvironmentMode = ModeOf(s, "environmentMode"),
+        ShuffleNames = s.Bool("names"),
+        NameMode = ModeOf(s, "nameMode"),
     };
 
     static string Lower(Mode m) => m.ToString().ToLowerInvariant();
@@ -127,9 +154,16 @@ public sealed class RandomizerOptions
         if (RandomizeWeaponStats) parts.Add($"weapons:{Lower(WeaponMode)}±{WeaponVariance}%");
         if (RandomizePrices) parts.Add($"prices±{PriceVariance}%");
         if (ShufflePerks) parts.Add($"perks:{Lower(PerkMode)}");
+        if (RandomizeCrewStats) parts.Add($"crew:{Lower(CrewStatsMode)}");
+        if (ShuffleProjectiles) parts.Add($"projectiles:{Lower(ProjectileMode)}");
         if (ShuffleDialogue) parts.Add($"dialogue:{(DialogueWithinConversation ? "conversation" : "all")}");
         if (ShuffleBarks) parts.Add("barks");
         if (ShuffleNpcLooks) parts.Add("npcs");
+        if (ShuffleCrewHats) parts.Add("crewhats");
+        if (ShuffleWeaponLooks) parts.Add($"weaponlooks:{Lower(WeaponLookMode)}");
+        if (ShuffleMusic) parts.Add("music");
+        if (ShuffleEnvironments) parts.Add($"environments:{Lower(EnvironmentMode)}");
+        if (ShuffleNames) parts.Add($"names:{Lower(NameMode)}");
         return $"seed {Seed} ({string.Join(", ", parts)})";
     }
 }

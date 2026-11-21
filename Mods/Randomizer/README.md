@@ -3,7 +3,8 @@
 Requires **SWH2 Mod Loader** 1.0+.
 
 Shuffles missions on the world map, the game's fixed rewards (story key items too, with logic), shop stock, enemies,
-enemy hats, weapon stats, class perks, prices, dialogue, battle barks and NPC looks. The same seed and settings always
+enemy hats, weapon stats and projectiles, class perks, crew stats, prices, and for fun: dialogue, battle barks, item
+and enemy names, music, mission lighting, weapon models, crew hats and NPC looks. The same seed and settings always
 produce the same game, so you can race or share seeds.
 
 Start a **new save** for the full experience (in an existing save only places you haven't visited change).
@@ -19,7 +20,11 @@ Pick one and you're done — a preset sets all options below. Changing any optio
 | Shops | stock swapped between shops, same kind and tier | any item in the game |
 | Enemies | any enemy from the game, with the health and damage of the one it replaces | any enemy, with its own stats (limited, see below) |
 | Enemy faction | of the replaced enemy — no infighting | its own — navy, pirates and atomics fight each other too |
-| Enemy hats, barks, NPC looks | shuffled | shuffled |
+| Enemy hats, crew hats, barks, NPC looks, music | shuffled | shuffled |
+| Weapon looks | inside the weapon class | any weapon |
+| Mission lighting | same kind of place | anything |
+| Projectiles, crew stats | unchanged | shuffled / any values |
+| Names of items and enemies | unchanged | everything together |
 | Weapon stats | unchanged | every stat ±30% |
 | Prices | unchanged | ±30% |
 | Class perks | unchanged | any perk on any class and level |
@@ -154,8 +159,32 @@ perk exists once, so no class gets one twice.
 ### NPC looks (on in both)
 Bartenders, shopkeepers and townsfolk swap models. Characters that cutscenes use keep theirs.
 
+### Crew stats (off in Balanced, Chaos in Chaos)
+Health, cogs and move distance of every crew member (in vanilla they are all the same: 8 / 3 / 6). The captain stays.
+- **Balanced**: one trade-off each, e.g. +2 health for -1 cog, +1 move for -2 health, or nothing.
+- **Chaos**: health -3..+4, cogs -1..+2, move -1..+1, each on its own.
+
+### Projectiles (off in Balanced, Chaos in Chaos)
+What player weapons shoot: lightning, lasers, fire, the banjo sniper's slow arcing shot… The projectile brings its
+speed, range and arc along, so this does change how a weapon plays; damage stays with the weapon. Grenade throws and
+aim previews stay. **Balanced**: inside the weapon class; **Chaos**: any player projectile.
+
+### Just for fun
+- **Crew hats** (on in both): every crew member wears another crew member's own hat (Daisy and Wesley start with
+  theirs). The captain keeps his.
+- **Weapon looks** (on in both): weapon models and icons swap, stats stay. Balanced: inside the weapon class, so it's
+  still held the right way. Chaos: any weapon — a hammer may look like a rifle.
+- **Music** (on in both): mission music, the regions' world map music and the songs of the bar bands, each shuffled
+  among its own kind. Music that cutscenes start stays.
+- **Mission lighting** (on in both): lighting, sky and background of missions. Balanced: same kind of place (navy
+  ship with navy ship, bar with bar…). Chaos: anything — Atomic City light in the Arctic.
+- **Names** (off in Balanced, Chaos in Chaos): names of weapons, utilities, ship equipment, hats and enemies swap, in
+  every language. Descriptions stay, so read those! Balanced: weapons with weapons, enemies with enemies… Chaos:
+  everything together — an enemy may be called "Repair Kit". The spoiler log always uses the real names.
+
 ## Not randomized
-- Random loot drops, crew members and their classes, mission maps, personal perks.
+- Random loot drops, which crew members you get and their classes (the tutorial is scripted around Daisy and
+  Wesley), mission maps, personal perks.
 
 ## Install
 Unpack into the game folder (so you get `SteamWorld Heist 2\Mods\Randomizer\mod.json`), or install with Vortex.

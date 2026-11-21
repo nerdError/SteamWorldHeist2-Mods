@@ -14,6 +14,7 @@ public sealed class RandomizerMod : IModPlugin
         ctx.Spoiler.Line("SteamWorld Heist 2 Randomizer — spoiler log");
         ctx.Spoiler.Line(options.Summary());
         ctx.Log($"Randomizing with {options.Summary()}");
+        _ = ctx.Items; // load names before the names module swaps them, so the spoiler log shows the real ones
 
         // Missions first: the item logic needs to know which missions moved.
         if (options.ShuffleMissions) MissionShuffle.Apply(ctx);
@@ -24,8 +25,16 @@ public sealed class RandomizerMod : IModPlugin
         if (options.RandomizeWeaponStats) StatRandomizer.ApplyWeaponStats(ctx);
         if (options.RandomizePrices) StatRandomizer.ApplyPrices(ctx);
         if (options.ShufflePerks) PerkShuffle.Apply(ctx);
+        if (options.RandomizeCrewStats) StatRandomizer.ApplyCrewStats(ctx);
+        if (options.ShuffleProjectiles) LookShuffle.ApplyProjectiles(ctx);
         if (options.ShuffleDialogue) TextShuffle.ApplyDialogue(ctx);
         if (options.ShuffleBarks) TextShuffle.ApplyBarks(ctx);
         if (options.ShuffleNpcLooks) LookShuffle.ApplyNpcs(ctx);
+        if (options.ShuffleCrewHats) LookShuffle.ApplyCrewHats(ctx);
+        if (options.ShuffleWeaponLooks) LookShuffle.ApplyWeaponLooks(ctx);
+        if (options.ShuffleMusic) FunShuffle.ApplyMusic(ctx);
+        if (options.ShuffleEnvironments) FunShuffle.ApplyEnvironments(ctx);
+        // Last: it rewrites the language files the other modules read names from.
+        if (options.ShuffleNames) FunShuffle.ApplyNames(ctx);
     }
 }

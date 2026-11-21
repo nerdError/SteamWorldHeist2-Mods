@@ -94,4 +94,42 @@ public static class StatRandomizer
             }
         ctx.Log($"Prices: {count} items changed.");
     }
+
+    /// <summary>Balanced trade-offs (health, cogs, move): about equal in worth, one per crew member.</summary>
+    static readonly (int Health, int Cogs, int Move)[] Trades =
+        [(0, 0, 0), (2, -1, 0), (-2, 1, 0), (2, 0, -1), (-2, 0, 1), (0, 1, -1), (0, -1, 1)];
+
+    /// <summary>
+    /// Crew stats: health and cog capacity (personas.xml BaseStats; every crew member inherits them from CREW) and move
+    /// distance (entities.crew.xml Actor/MoveDistance, from the CREW entity) get per-member values. The captain stays.
+    ///  - Balanced: one trade-off each, e.g. +2 health for -1 cog, or nothing.
+    ///  - Chaos: health -3..+4, cogs -1..+2, move -1..+1, each on its own.
+    /// </summary>
+    public static void ApplyCrewStats(RandomizerContext ctx)
+    {
+        var c = ctx.Content;
+        var rng = ctx.RngFor("crewstats");
+        bool balanced = ctx.Options.CrewStatsMode == Mode.Balanced;
+        var personas = c.Xml("Definitions/personas.xml").Definitions("Persona").ToList();
+        var entities = c.Xml("Definitions/entities.crew.xml").Definitions("Entity").ToDictionary(e => e.Name(), StringComparer.Ordinal);
+        var baseStats = personas.First(p => p.Name() == "CREW").Element("BaseStats")!;
+        int health = int.Parse(baseStats.Element("HitPoints")!.Value.Trim()), cogs = int.Parse(baseStats.Element("CogCapacity")!.Value.Trim());
+        int move = int.Parse(entities["CREW"].Element("Actor")!.Element("MoveDistance")!.Value.Trim());
+
+        ctx.Spoiler.Section($"Crew stats ({ctx.Options.CrewStatsMode}; base: health {health}, cogs {cogs}, move {move})");
+        foreach (var p in personas.Where(p => p.Attribute("Template")?.Value == "CREW" && !p.IsAbstract()))
+        {
+            if (p.Element("TacticsEntity")?.Value.Trim() is not { } entityName || !entities.TryGetValue(entityName, out var entity)) continue;
+            var (dh, dc, dm) = balanced ? rng.Pick(Trades) : (rng.Next(-3, 5), rng.Next(-1, 3), rng.Next(-1, 2));
+            int h = Math.Max(4, health + dh), cg = Math.Max(1, cogs + dc), mv = Math.Max(4, move + dm);
+
+            if (p.Element("BaseStats") is not { } stats) p.Add(stats = new XElement("BaseStats"));
+            stats.SetElementValue("HitPoints", h);
+            stats.SetElementValue("CogCapacity", cg);
+            if (entity.Element("Actor") is not { } actor) entity.Add(actor = new XElement("Actor"));
+            actor.SetElementValue("MoveDistance", mv);
+            ctx.Spoiler.Line($"{ctx.Loc.Get("persona_" + p.Name()) ?? p.Name()}: health {h}, cogs {cg}, move {mv}");
+        }
+        ctx.Log("Crew stats randomized.");
+    }
 }

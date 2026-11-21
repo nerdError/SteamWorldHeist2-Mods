@@ -249,6 +249,12 @@ SteamWorld Heist 2/
 | Перки классов | `jobs.xml` → `Job/Upgrades/Upgrade` (уровень 0 не трогается) |
 | Реплики / выкрики | `conversations.xml` (`Speak@Text`), `barks.xml` (`String`) — меняются ключи строк, тексты в `Language/*.csv` не трогаются |
 | Внешность NPC | `entities.npc.xml` → `SkinnedCharacter/File` |
+| Шапки экипажа | `entities.crew.xml` → `crew_*/Actor/Hat`, синхронно `outsets.xml` → `Crew/Hat` |
+| Характеристики экипажа | `personas.xml` → `BaseStats` (`HitPoints`, `CogCapacity`; у всех наследуются от `CREW`), `entities.crew.xml` → `Actor/MoveDistance` (база 6 в сущности `CREW`) |
+| Модели оружия / снаряды | `weapons.xml` → `Character` + `Portrait` / `Projectile` (снаряд = скорость, дальность, дуга из `entities.projectiles.xml`) |
+| Музыка | `missions*.de` → `Music`, `worldmap_regions.xml` → `Region/Music`, `music_lists.xml` → `Entry@MusicCue` (песни бар-групп) |
+| Освещение миссий | `missions*.de` → `Environment` (см. `environments.xml`) |
+| Названия | `Language/<lang>.csv` — меняются местами тексты ключей названий (`weapon_<имя>` / `LocalizedNameId` / имя предмета, `NameStringId` врагов) |
 | Цены | `weapons.xml`, `utilities.xml`, `ship_equipment.xml`, `hats.xml`, `special_items.xml`, `key_items.xml` |
 | Челлендж «без гринда» | `quests.xml` (+2 скрытых квеста на миссию: `nogrind_won_*` → `nogrind_lock_*` с `LockMissions`), `worldmap_regions.xml` (`RespawnIfAchievedReputation`, лут `worldmap_ghost`), `worldmap_spawns.xml` (спауны `wm_loot`), `entities.worldmap.xml` (`LootEntity` кораблей) |
 
