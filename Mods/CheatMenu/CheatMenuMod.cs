@@ -73,6 +73,7 @@ public sealed class CheatMenuMod : IModPlugin, IModTool, IModCommand
     public void OpenTool(ModToolContext ctx)
     {
         if (_form is null || _form.IsDisposed) _form = new CheatForm(ctx.Game);
+        if (ctx.Owner is Form owner) _form.Icon = owner.Icon;
         _form.Show(ctx.Owner as IWin32Window);
         _form.Activate();
     }

@@ -39,6 +39,7 @@ public sealed class MainForm : Form
     readonly FlowLayoutPanel _settingsPanel = new() { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
     readonly ToolTip _tips = new() { AutoPopDelay = 20000 };
     readonly List<(string Id, Control Control)> _settingControls = [];
+    int _settingsLayoutWidth;
 
     // Actions + log
     readonly Button _apply = new() { Text = "Apply to game", AutoSize = true, Font = new Font("Segoe UI", 10F, FontStyle.Bold) };
@@ -57,6 +58,7 @@ public sealed class MainForm : Form
         ClientSize = new Size(1100, 860);
         MinimumSize = new Size(860, 640);
         StartPosition = FormStartPosition.CenterScreen;
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (ArgumentException) { }
 
         BuildLayout();
         WireEvents();
@@ -154,9 +156,14 @@ public sealed class MainForm : Form
     {
         _gamePath.TextChanged += (_, _) => ValidateGamePath();
         Resize += (_, _) => _fileStatus.MaximumSize = new Size(Math.Max(200, ClientSize.Width - 60), 0);
+        _settingsPanel.SizeChanged += (_, _) =>
+        {
+            if (Math.Abs(_settingsPanel.Width - _settingsLayoutWidth) > 24) RebuildSettingsKeepScroll();
+        };
         _list.ItemChecked += (_, e) => OnModChecked(e.Item);
         _list.SelectedIndexChanged += (_, _) => ShowSelected();
-        _list.Resize += (_, _) => _list.Columns[0].Width = Math.Max(120, _list.ClientSize.Width - 70 - 100 - 90 - 4);
+        // After the list has its new size, otherwise a horizontal scrollbar from the old column width stays.
+        _list.Resize += (_, _) => { if (_list.IsHandleCreated) BeginInvoke(FitModColumn); };
         _list.DragEnter += (_, e) => e.Effect = DroppedZips(e).Length > 0 ? DragDropEffects.Copy : DragDropEffects.None;
         _list.DragDrop += (_, e) => InstallZips(DroppedZips(e));
         _installZip.Click += (_, _) =>
@@ -193,6 +200,9 @@ public sealed class MainForm : Form
         _openTool.Click += (_, _) => { if (Game is { } g) OpenFolder(g.ToolDir); };
         FormClosing += (_, _) => SaveAll();
     }
+
+    void FitModColumn() =>
+        _list.Columns[0].Width = Math.Max(120, _list.ClientSize.Width - _list.Columns[1].Width - _list.Columns[2].Width - _list.Columns[3].Width - SystemInformation.VerticalScrollBarWidth);
 
     void ValidateGamePath()
     {
@@ -340,7 +350,9 @@ public sealed class MainForm : Form
         _modInfo.Text = (mod.Description ?? "") + (mod.Url != null ? "  " + mod.Url : "");
         _settingsBox.Text = $"Settings — {mod.Title}{(_profile.IsEnabled(mod.Id) ? "" : " (disabled)")}";
         var s = SettingsOf(mod);
-        int width = Math.Max(300, _settingsPanel.ClientSize.Width - 30);
+        // Outer width minus a possible scrollbar: stays the same whether or not the scrollbar is shown.
+        int width = Math.Max(300, _settingsPanel.Width - SystemInformation.VerticalScrollBarWidth - 16);
+        _settingsLayoutWidth = _settingsPanel.Width;
 
         if (mod.Settings.Count == 0)
             _settingsPanel.Controls.Add(new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Text = "This mod has no settings." });
@@ -349,10 +361,11 @@ public sealed class MainForm : Form
         {
             Control? input = null;
             Control row;
+            int rowWidth = width - (def.EnabledBy != null ? 20 : 0);
             switch (def.Type)
             {
                 case SettingType.Header:
-                    row = new Label { Text = def.DisplayLabel, AutoSize = true, UseMnemonic = false, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, _settingsPanel.Controls.Count > 0 ? 12 : 0, 0, 2) };
+                    row = new Label { Text = def.DisplayLabel, AutoSize = true, MaximumSize = new Size(width, 0), UseMnemonic = false, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, _settingsPanel.Controls.Count > 0 ? 12 : 0, 0, 2) };
                     break;
                 case SettingType.Bool:
                 {
@@ -375,17 +388,23 @@ public sealed class MainForm : Form
                     num.Value = Math.Max(num.Minimum, Math.Min(num.Maximum, decimal.Parse(s.String(def.Id), Inv)));
                     num.ValueChanged += (_, _) => Changed(s, def.Id, num.Value.ToString(Inv));
                     input = num;
-                    row = Row(Caption(def), num);
+                    row = FitRow(Caption(def), rowWidth, num);
                     break;
                 }
                 case SettingType.Choice:
                 {
-                    var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
+                    var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
                     foreach (var c in def.Choices ?? []) combo.Items.Add(c);
                     combo.SelectedItem = def.Choices?.FirstOrDefault(c => c.Value == s.String(def.Id));
-                    combo.SelectedIndexChanged += (_, _) => { if (combo.SelectedItem is ChoiceDef c) Changed(s, def.Id, c.Value); };
+                    combo.SelectedIndexChanged += (_, _) =>
+                    {
+                        if (combo.SelectedItem is ChoiceDef c) Changed(s, def.Id, c.Value);
+                        _tips.SetToolTip(combo, def.Help ?? combo.Text);
+                    };
                     input = combo;
-                    row = Row(Caption(def), combo);
+                    FitCombo(combo);
+                    row = FitRow(Caption(def), rowWidth, combo);
+                    if (def.Help == null) _tips.SetToolTip(combo, combo.Text);
                     break;
                 }
                 default:
@@ -397,9 +416,9 @@ public sealed class MainForm : Form
                     {
                         var newSeed = new Button { Text = "New seed", AutoSize = true };
                         newSeed.Click += (_, _) => tb.Text = ModSettings.NewSeed();
-                        row = Row(Caption(def), tb, newSeed);
+                        row = FitRow(Caption(def), rowWidth, tb, newSeed);
                     }
-                    else row = Row(Caption(def), tb);
+                    else row = FitRow(Caption(def), rowWidth, tb);
                     break;
                 }
             }
@@ -413,7 +432,7 @@ public sealed class MainForm : Form
             if (input != null) _settingControls.Add((def.Id, row));
             if (def.Help != null && def.Type != SettingType.Header)
             {
-                var help = new Label { Text = def.Help, AutoSize = true, UseMnemonic = false, ForeColor = SystemColors.GrayText, MaximumSize = new Size(width - 20, 0), Margin = new Padding(row.Margin.Left + 20, 0, 0, 4) };
+                var help = new Label { Text = def.Help, AutoSize = true, UseMnemonic = false, ForeColor = SystemColors.GrayText, MaximumSize = new Size(width - row.Margin.Left - 20, 0), Margin = new Padding(row.Margin.Left + 20, 0, 0, 4) };
                 _settingsPanel.Controls.Add(help);
                 _settingControls.Add((def.Id, help));
             }
@@ -426,6 +445,33 @@ public sealed class MainForm : Form
             });
         UpdateActive(s);
         _settingsPanel.ResumeLayout();
+    }
+
+    /// <summary>
+    /// Caption + input on one line when they fit into <paramref name="width"/>, otherwise the input goes under the
+    /// caption (and is shrunk to the width if it's still too wide).
+    /// </summary>
+    Control FitRow(Label caption, int width, params Control[] inputs)
+    {
+        // Not parented yet, so the controls still have the default font: measure with the form's.
+        int captionWidth = TextRenderer.MeasureText(caption.Text, Font).Width + caption.Margin.Horizontal;
+        int inputsWidth = inputs.Sum(c => (c is Button b ? TextRenderer.MeasureText(b.Text, Font).Width + 24 : c.Width) + c.Margin.Horizontal);
+        if (captionWidth + inputsWidth <= width) return Row([caption, .. inputs]);
+        if (inputs.Length == 1 && inputsWidth > width) inputs[0].Width = Math.Max(120, width - inputs[0].Margin.Horizontal);
+        var stack = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0, 2, 0, 2) };
+        caption.Margin = new Padding(0, 4, 0, 0);
+        caption.MaximumSize = new Size(width, 0);
+        stack.Controls.AddRange([caption, Row(inputs)]);
+        stack.Controls[1].Margin = Padding.Empty;
+        return stack;
+    }
+
+    /// <summary>Combo as wide as its longest option; the drop-down list always shows every option in full.</summary>
+    void FitCombo(ComboBox combo)
+    {
+        int text = combo.Items.Cast<object>().Select(i => TextRenderer.MeasureText(i.ToString(), Font).Width).DefaultIfEmpty(0).Max();
+        combo.Width = Math.Max(160, text + SystemInformation.VerticalScrollBarWidth + 12);
+        combo.DropDownWidth = Math.Min(combo.Width, Screen.PrimaryScreen.WorkingArea.Width - 40);
     }
 
     static Label Caption(SettingDef def) => new() { Text = def.DisplayLabel + ":", AutoSize = true, UseMnemonic = false, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 6, 0) };
@@ -443,13 +489,15 @@ public sealed class MainForm : Form
         if (!s.TrySet(id, value, out var error)) Log(error!);
         // A preset changed other settings (or a manual change switched the preset to custom): show the new values.
         if (s.Values.Any(kv => !kv.Key.Equals(id, StringComparison.OrdinalIgnoreCase) && before[kv.Key] != kv.Value))
-            BeginInvoke(new Action(() =>
-            {
-                var scroll = _settingsPanel.VerticalScroll.Value;
-                ShowSelected();
-                _settingsPanel.AutoScrollPosition = new Point(0, scroll);
-            }));
+            BeginInvoke(new Action(RebuildSettingsKeepScroll));
         else UpdateActive(s);
+    }
+
+    void RebuildSettingsKeepScroll()
+    {
+        var scroll = _settingsPanel.VerticalScroll.Value;
+        ShowSelected();
+        _settingsPanel.AutoScrollPosition = new Point(0, scroll);
     }
 
     void UpdateActive(ModSettings s)
