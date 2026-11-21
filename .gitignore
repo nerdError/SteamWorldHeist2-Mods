@@ -5,6 +5,9 @@ publish/
 dist/
 artifacts/
 
+# Personal build settings (see build.local.example.cmd)
+build.local.cmd
+
 # IDE
 .vs/
 .vscode/

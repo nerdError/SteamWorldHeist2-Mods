@@ -97,7 +97,7 @@ Game path: the folder the loader sits in (`<game>\SWH2ModLoader\`), else Steam l
 ### Building and releasing
 
 Requires the .NET SDK (8+; tested on 10) — it also builds the `net48` projects (reference assemblies come from NuGet).
-**To build everything, double-click `build.cmd`**; **to build and copy into the game folder, double-click `deploy.cmd`** (same as `build.cmd deploy`;
+**To build everything, double-click `build.cmd`**; **to build and copy into the game folder, double-click `deploy.cmd`** (to make `build.cmd` always copy too, copy `build.local.example.cmd` to `build.local.cmd` and set `AUTO_DEPLOY=1`; same as `build.cmd deploy`;
 `build.cmd deploy "D:\...\SteamWorld Heist 2"` for another folder). Output goes to `dist\`:
 
 | What | Why |
@@ -239,7 +239,7 @@ swh2 cheat win|heal|...                     # команда мода Cheat Menu
 ### Сборка и выпуск
 
 Требуется .NET SDK (8+; проверено на 10) — он собирает и проекты под `net48` (референс-сборки тянутся из NuGet).
-**Просто собрать всё — двойной клик по `build.cmd`**; **собрать и сразу поставить в папку игры — двойной клик по `deploy.cmd`** (то же, что `build.cmd deploy`;
+**Просто собрать всё — двойной клик по `build.cmd`**; **собрать и сразу поставить в папку игры — двойной клик по `deploy.cmd`** (чтобы `build.cmd` всегда копировал сам — скопируйте `build.local.example.cmd` в `build.local.cmd` и поставьте `AUTO_DEPLOY=1`; то же, что `build.cmd deploy`;
 `build.cmd deploy "D:\...\SteamWorld Heist 2"` — другая папка). Результат в `dist\`:
 
 | Что | Зачем |
