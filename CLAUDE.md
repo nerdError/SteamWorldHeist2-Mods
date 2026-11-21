@@ -27,7 +27,7 @@ four mods published separately on Nexus: Randomizer, Turbo (exe), Challenges, Ch
   Randomizer modules: `Apply(RandomizerContext)`, use `ctx.RngFor("<module>")` so modules don't affect each other's
   output for the same seed; spoiler lines go to `ctx.Spoiler` (= the mod's report).
 - `build.cmd` / `tools/package.ps1` → `dist/SWH2-ModPack-<ver>/` (+ .zip; loader + all mods + `docs/GUIDE_RU.md` as
-  README.txt) and `dist/nexus/*.zip` (archives rooted at the game folder). `build.cmd deploy` copies into the game folder.
+  README.txt) and `dist/nexus/*.zip` (archives rooted at the game folder). `build.cmd deploy` (or double-click `deploy.cmd`) copies into the game folder.
   When adding a mod, add it to `$mods` in package.ps1 and to GUIDE_RU.md.
 - Everything is `net48` + `LangVersion latest` + PolySharp (root `Directory.Build.props`). Missing BCL APIs: use
   `SWH2.Compat` (`SWH2.Core/Compat.cs`: `Hex`, `PathEx`, dictionary/string helpers) instead of .NET 5+ APIs.

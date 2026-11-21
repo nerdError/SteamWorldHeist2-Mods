@@ -3,7 +3,7 @@
 Requires **SWH2 Mod Loader** 1.0+.
 
 Shuffles missions on the world map, the game's fixed rewards (story key items too, with logic), shop stock, enemies,
-enemy hats, weapon stats and projectiles, class perks, crew stats, prices, and for fun: dialogue, battle barks, item
+enemy hats, weapon stats and projectiles, utility and ability stats, class perks, crew stats, prices, and for fun: dialogue, battle barks, item
 and enemy names, music, mission lighting, weapon models, crew hats and NPC looks. The same seed and settings always
 produce the same game, so you can race or share seeds.
 
@@ -24,6 +24,7 @@ Pick one and you're done — a preset sets all options below. Changing any optio
 | Weapon looks | inside the weapon class | any weapon |
 | Mission lighting | same kind of place | anything |
 | Projectiles, crew stats | unchanged | shuffled / any values |
+| Utility and ability stats | unchanged (Balanced modes available) | every number ±30% |
 | Names of items and enemies | unchanged | everything together |
 | Weapon stats | unchanged | every stat ±30% |
 | Prices | unchanged | ±30% |
@@ -158,6 +159,20 @@ perk exists once, so no class gets one twice.
 
 ### NPC looks (on in both)
 Bartenders, shopkeepers and townsfolk swap models. Characters that cutscenes use keep theirs.
+
+### Utility stats (off in Balanced, Chaos in Chaos)
+Grenade damage and blast radius, repair amounts, charges and cooldowns of usable utilities, and the bonuses of worn ones
+(boots, armor, scopes, cog chains, crit goggles, jetpack, xp badge…), within ±N%.
+- **Balanced**: each utility gets stronger or weaker as a whole, and its **price follows** (e.g. Repair Kit III heals
+  6 instead of 5 and costs 720 instead of 600), so it's still worth its money.
+- **Chaos**: every number on its own, price unchanged. Small numbers (1–3) move by ±1 now and then.
+
+### Ability stats (off in Balanced, Chaos in Chaos)
+Cooldown, charges, damage, healing and range of class and personal abilities, and their cog cost.
+- **Balanced**: an ability that costs cogs gets one step stronger and costs one cog more, or one step weaker and one
+  cog cheaper (e.g. Warcry: cooldown 4 instead of 5, 3 cogs instead of 2). Free core abilities stay.
+- **Chaos**: every number on its own, cog cost anywhere from 0 to 5.
+- Abilities enemies also use stay; passive +1 perks and the inner workings of buffs aren't touched.
 
 ### Crew stats (off in Balanced, Chaos in Chaos)
 Health, cogs and move distance of every crew member (in vanilla they are all the same: 8 / 3 / 6). The captain stays.

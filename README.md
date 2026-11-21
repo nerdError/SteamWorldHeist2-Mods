@@ -20,7 +20,7 @@ turbo battles, challenges and a cheat menu.
 - **Enemy randomizer** — enemies are replaced with enemies from the whole game (optionally with their own faction, so they fight each other).
 - **Enemy hats** — enemies wear and drop each other's hats.
 - **Weapon stats, perks and prices** — weapon stats (balanced trade-off or each stat on its own), class perks moved between classes, prices within a chosen range.
-- **Crew and projectiles** — crew health/cogs/move, and what weapons shoot (lightning, lasers, arcing shots).
+- **Crew, utilities, abilities, projectiles** — crew health/cogs/move, utility and ability numbers (balanced: price or cog cost follows), what weapons shoot.
 - **Just for fun** — dialogue lines, battle barks, names of items and enemies, music, mission lighting, weapon models, crew hats and NPC looks.
 - **Seeds** — the same seed and settings give the same game on any PC: race or share seeds; a spoiler log is written for every seed.
 - **Presets** — *Balanced* (plays like the normal game) and *Chaos* (wild but beatable).
@@ -97,7 +97,7 @@ Game path: the folder the loader sits in (`<game>\SWH2ModLoader\`), else Steam l
 ### Building and releasing
 
 Requires the .NET SDK (8+; tested on 10) — it also builds the `net48` projects (reference assemblies come from NuGet).
-**To build everything, double-click `build.cmd`** (or `build.cmd deploy` to build and copy into the game folder;
+**To build everything, double-click `build.cmd`**; **to build and copy into the game folder, double-click `deploy.cmd`** (same as `build.cmd deploy`;
 `build.cmd deploy "D:\...\SteamWorld Heist 2"` for another folder). Output goes to `dist\`:
 
 | What | Why |
@@ -129,7 +129,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | `SWH2.Core/Pipeline.cs` | install / restore / extract / roundtrip — shared by GUI and CLI |
 | `SWH2.ModLoader/` | WinForms GUI (mod manager) |
 | `SWH2.Cli/` | the `swh2` console tool |
-| `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `TextShuffle`, `LookShuffle`, `FunShuffle`; `Story` (progression, story timeline) |
+| `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `AbilityStats`, `TextShuffle`, `LookShuffle`, `FunShuffle`; `Story` (progression, story timeline) |
 | `Mods/Turbo/` | battle time-scale patch (code from `exe_patch.py`, ported as bytes + a relocation table) |
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
 | `Mods/CheatMenu/` | Lua backend and mission hook (`Lua/*.lua`, embedded in the dll), modifiers, `CheatForm` window, `CheatClient` (file-based protocol) |
@@ -139,7 +139,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 
 ### Ideas for the future
 
-- Starting weapons, utility stats, ship equipment stats, hiring prices, upgrade costs, `loot_tables.xml`, edicts as per-mission mutators, weapon sounds, enemy hurt voices, speaker portraits.
+- Starting weapons, ship equipment stats, buff (modifier) values, hiring prices, upgrade costs, `loot_tables.xml`, edicts as per-mission mutators, weapon sounds, enemy hurt voices, speaker portraits.
 - Challenges: turn limit, permadeath, per-mission mutators (see MODDING.md).
 - Key item logic with map knowledge (which areas need diving, boost, ram…) so more key items can move.
 
@@ -162,7 +162,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 - **Рандомизация врагов** — враги заменяются врагами со всей игры (по желанию — со своей фракцией, тогда они дерутся между собой).
 - **Шапки врагов** — враги носят и роняют шапки друг друга.
 - **Оружие, перки, цены** — характеристики оружия (сбалансированный обмен или каждая сама по себе), перки классов меняются между классами, цены в заданном разбросе.
-- **Экипаж и снаряды** — здоровье/шестерни/ход экипажа и чем стреляет оружие (молнии, лазеры, навесные выстрелы).
+- **Экипаж, утилиты, способности, снаряды** — здоровье/шестерни/ход экипажа, числа утилит и способностей (в balanced за силу платишь ценой или шестернями), чем стреляет оружие.
 - **Просто для веселья** — реплики, выкрики в бою, названия предметов и врагов, музыка, освещение миссий, модели оружия, шапки экипажа и внешность NPC.
 - **Сиды** — одинаковый сид и настройки дают одинаковую игру на любом ПК; для каждого сида пишется спойлер-лог.
 - **Пресеты** — *Balanced* (как обычная игра) и *Chaos* (безумно, но проходимо).
@@ -239,7 +239,7 @@ swh2 cheat win|heal|...                     # команда мода Cheat Menu
 ### Сборка и выпуск
 
 Требуется .NET SDK (8+; проверено на 10) — он собирает и проекты под `net48` (референс-сборки тянутся из NuGet).
-**Просто собрать всё — двойной клик по `build.cmd`** (или `build.cmd deploy` — собрать и сразу скопировать в папку игры;
+**Просто собрать всё — двойной клик по `build.cmd`**; **собрать и сразу поставить в папку игры — двойной клик по `deploy.cmd`** (то же, что `build.cmd deploy`;
 `build.cmd deploy "D:\...\SteamWorld Heist 2"` — другая папка). Результат в `dist\`:
 
 | Что | Зачем |
@@ -271,7 +271,7 @@ PolySharp (полифиллы на этапе компиляции), недос�
 | `SWH2.Core/Pipeline.cs` | install / restore / extract / roundtrip — общие для GUI и CLI |
 | `SWH2.ModLoader/` | WinForms GUI (менеджер модов) |
 | `SWH2.Cli/` | консольная утилита `swh2` |
-| `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `TextShuffle`, `LookShuffle`, `FunShuffle`; `Story` (progression, story timeline) |
+| `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `AbilityStats`, `TextShuffle`, `LookShuffle`, `FunShuffle`; `Story` (progression, story timeline) |
 | `Mods/Turbo/` | патч масштаба времени боя (код из `exe_patch.py`, перенесён байтами + таблица релокаций) |
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
 | `Mods/CheatMenu/` | Lua-бэкенд и хук миссий (`Lua/*.lua`, встроены в dll), модификаторы, окно `CheatForm`, `CheatClient` (файловый протокол) |
@@ -281,7 +281,7 @@ PolySharp (полифиллы на этапе компиляции), недос�
 
 ### Идеи на будущее
 
-- Стартовое оружие, характеристики утилит и модулей подлодки, цены найма и апгрейдов, `loot_tables.xml`, эдикты как мутаторы миссий, звуки выстрелов, голоса врагов, портреты в диалогах.
+- Стартовое оружие, характеристики модулей подлодки, числа баффов (модификаторов), цены найма и апгрейдов, `loot_tables.xml`, эдикты как мутаторы миссий, звуки выстрелов, голоса врагов, портреты в диалогах.
 - Челленджи: лимит ходов, permadeath, мутаторы на миссию (см. MODDING.md).
 - Логика ключевых предметов со знанием карты (где нужен нырок, ускоритель, таран…), чтобы переносить больше ключевых предметов.
 

@@ -25,6 +25,8 @@ public sealed class RandomizerMod : IModPlugin
         if (options.RandomizeWeaponStats) StatRandomizer.ApplyWeaponStats(ctx);
         if (options.RandomizePrices) StatRandomizer.ApplyPrices(ctx);
         if (options.ShufflePerks) PerkShuffle.Apply(ctx);
+        if (options.RandomizeUtilities) AbilityStats.ApplyUtilities(ctx);
+        if (options.RandomizeAbilities) AbilityStats.ApplyAbilities(ctx);
         if (options.RandomizeCrewStats) StatRandomizer.ApplyCrewStats(ctx);
         if (options.ShuffleProjectiles) LookShuffle.ApplyProjectiles(ctx);
         if (options.ShuffleDialogue) TextShuffle.ApplyDialogue(ctx);

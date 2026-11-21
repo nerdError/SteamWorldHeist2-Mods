@@ -73,6 +73,13 @@ public sealed class RandomizerOptions
     public bool ShufflePerks { get; set; }
     public Mode PerkMode { get; set; } = Mode.Balanced;
 
+    public bool RandomizeUtilities { get; set; }
+    public Mode UtilityMode { get; set; } = Mode.Balanced;
+    /// <summary>Variance for utility numbers (chaos abilities use it too).</summary>
+    public int UtilityVariance { get; set; } = 30;
+    public bool RandomizeAbilities { get; set; }
+    public Mode AbilityMode { get; set; } = Mode.Balanced;
+
     public bool RandomizeCrewStats { get; set; }
     public Mode CrewStatsMode { get; set; } = Mode.Balanced;
 
@@ -125,6 +132,11 @@ public sealed class RandomizerOptions
         DialogueWithinConversation = s.String("dialogueMode") != "all",
         ShuffleBarks = s.Bool("barks"),
         ShuffleNpcLooks = s.Bool("npcs"),
+        RandomizeUtilities = s.Bool("utilities"),
+        UtilityMode = ModeOf(s, "utilityMode"),
+        UtilityVariance = s.Int("utilityPct"),
+        RandomizeAbilities = s.Bool("abilities"),
+        AbilityMode = ModeOf(s, "abilityMode"),
         RandomizeCrewStats = s.Bool("crewStats"),
         CrewStatsMode = ModeOf(s, "crewStatsMode"),
         ShuffleProjectiles = s.Bool("projectiles"),
@@ -154,6 +166,8 @@ public sealed class RandomizerOptions
         if (RandomizeWeaponStats) parts.Add($"weapons:{Lower(WeaponMode)}±{WeaponVariance}%");
         if (RandomizePrices) parts.Add($"prices±{PriceVariance}%");
         if (ShufflePerks) parts.Add($"perks:{Lower(PerkMode)}");
+        if (RandomizeUtilities) parts.Add($"utilities:{Lower(UtilityMode)}±{UtilityVariance}%");
+        if (RandomizeAbilities) parts.Add($"abilities:{Lower(AbilityMode)}");
         if (RandomizeCrewStats) parts.Add($"crew:{Lower(CrewStatsMode)}");
         if (ShuffleProjectiles) parts.Add($"projectiles:{Lower(ProjectileMode)}");
         if (ShuffleDialogue) parts.Add($"dialogue:{(DialogueWithinConversation ? "conversation" : "all")}");

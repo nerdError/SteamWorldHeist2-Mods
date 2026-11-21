@@ -249,6 +249,8 @@ SteamWorld Heist 2/
 | Перки классов | `jobs.xml` → `Job/Upgrades/Upgrade` (уровень 0 не трогается) |
 | Реплики / выкрики | `conversations.xml` (`Speak@Text`), `barks.xml` (`String`) — меняются ключи строк, тексты в `Language/*.csv` не трогаются |
 | Внешность NPC | `entities.npc.xml` → `SkinnedCharacter/File` |
+| Характеристики утилит | `utilities.xml` → `Stats/*` (пассивные) и их `Action` в `actions.xml` (`ExplosiveDamage/Amount`, `DamageRadius`, `Property@HealAmount`, `StartingCharges`, `Cooldown`); balanced меняет и `LootCost` |
+| Характеристики способностей | `job_upgrades.xml`, `job_upgrades.personal.xml` → `CogCost` и их `Action` в `actions.xml` (`Cooldown`, `StartingCharges`, урон, `NavRange`, `Property@HealAmount/Points`); действия, которые есть у врагов, не трогаются |
 | Шапки экипажа | `entities.crew.xml` → `crew_*/Actor/Hat`, синхронно `outsets.xml` → `Crew/Hat` |
 | Характеристики экипажа | `personas.xml` → `BaseStats` (`HitPoints`, `CogCapacity`; у всех наследуются от `CREW`), `entities.crew.xml` → `Actor/MoveDistance` (база 6 в сущности `CREW`) |
 | Модели оружия / снаряды | `weapons.xml` → `Character` + `Portrait` / `Projectile` (снаряд = скорость, дальность, дуга из `entities.projectiles.xml`) |
