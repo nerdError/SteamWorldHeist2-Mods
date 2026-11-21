@@ -1,5 +1,15 @@
 # SWH2 Mod Loader + моды для SteamWorld Heist 2
 
+[![build](https://github.com/nerdError/SteamWorldHeist2-Mods/actions/workflows/build.yml/badge.svg)](https://github.com/nerdError/SteamWorldHeist2-Mods/actions/workflows/build.yml)
+
+> **English:** a mod manager / modding framework for *SteamWorld Heist 2* (GUI + `swh2` CLI, .NET Framework 4.8)
+> and four mods built on it: Randomizer, Turbo Battles, Challenge Manager, Cheat Menu. Mods edit the game's
+> XML/Lua data and can patch the exe; originals are backed up and every Apply rebuilds from them.
+> Build: `build.cmd` (needs .NET SDK 8+). Mod API: [docs/MAKING_MODS.md](docs/MAKING_MODS.md).
+>
+> Unofficial fan project, not affiliated with Thunderful / Image & Form. No game files are included —
+> you need your own copy of the game.
+
 Менеджер модов / фреймворк для модов **SteamWorld Heist 2** и четыре мода на нём. Всё на **.NET Framework 4.8** —
 он встроен в Windows 10 (1903+) и 11, игрокам ничего не нужно докачивать.
 
@@ -113,3 +123,7 @@ PolySharp (полифиллы на этапе компиляции), недос�
 - Перемешивание шляп, стартового экипажа/профессий, стартового оружия; `loot_tables.xml`, цены найма, апгрейды.
 - Челленджи: лимит ходов, permadeath, мутаторы на миссию (см. MODDING.md).
 - Логика доступности (как в SWD2Randomizer) для перемешивания ключевых предметов.
+
+## Лицензия
+
+[MIT](LICENSE). SteamWorld Heist 2 и все её ресурсы принадлежат правообладателям; репозиторий не содержит файлов игры.

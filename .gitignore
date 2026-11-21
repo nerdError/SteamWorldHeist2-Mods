@@ -1,6 +1,26 @@
+# Build output
 bin/
 obj/
-.vs/
-*.user
 publish/
 dist/
+artifacts/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Python
+__pycache__/
+*.pyc
+
+# Local game data — never commit extracted/copied game files
+*.pak
+*_extracted/
+extracted/
+
+# OS
+Thumbs.db
+.DS_Store
