@@ -31,6 +31,17 @@ Pick one and you're done — a preset sets all options below. Changing any optio
 | Class perks | unchanged | any perk on any class and level |
 | Dialogue | unchanged | lines from the whole game |
 
+### Quick switches
+Under the preset, for building your own mix without clicking through every option:
+- **All modes** — *Balanced* or *Chaos* for the Mode of every option at once (also the enemy faction and dialogue
+  mode); nothing gets switched on or off.
+- **Main** — on/off for missions, item rewards, shops, enemies and enemy hats.
+- **Stats** — on/off for weapon, utility, ability and crew stats, prices, class perks and projectiles.
+- **Cosmetic** — *All*, *Light* (everything except dialogue and names, so the story stays readable) or *Off*.
+
+Each switch shows the option that matches the current settings, or *Mixed* when you set that part by hand.
+E.g. *Chaos* preset → *Stats: Off* gives chaotic missions, loot and enemies with vanilla weapon numbers.
+
 **Balanced** plays like the normal game: you meet new enemies and find gear in new places, but the difficulty
 curve stays the same.
 

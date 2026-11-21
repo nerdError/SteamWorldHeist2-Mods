@@ -42,7 +42,9 @@ random one at install time and saved. Values are stored in `SWH2ModLoader\profil
 
 **Presets**: a `choice` whose options have `"sets": { "otherId": value, ... }` is a preset. Picking such an option
 (in the GUI or `swh2 set`) writes those values into the other settings; changing one of them by hand afterwards
-switches the preset to its first option without `sets` (e.g. `{ "value": "custom", "label": "Custom" }`). The plugin
+switches the preset to its first option without `sets` (e.g. `{ "value": "custom", "label": "Custom" }`). A mod can
+have several presets over overlapping settings: after every change each preset shows its first option whose `sets`
+all match the current values (else its custom option), also when the profile is loaded. The plugin
 just reads the individual settings. Example: Mods/Randomizer/mod.json.
 
 A folder **without** mod.json still works: the whole folder is treated as pak layout (old-style mod).

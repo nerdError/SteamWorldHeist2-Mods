@@ -1,9 +1,9 @@
 {
   "id": "Challenges",
   "name": "Challenge Manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "nerderror",
-  "description": "Optional rules for harder runs, each with its own switch. Works on its own or together with the Randomizer. 'No checkpoints' patches the game exe (supported Steam build only).",
+  "description": "Optional rules for harder runs, each with its own switch: no grind, whole-game mutators (1 HP, explosive shots, death blasts), permadeath and one-life runs. Works on its own or together with the Randomizer. 'No checkpoints' patches the game exe (supported Steam build only).",
   "plugin": "SWH2.Mod.Challenges.dll",
   "order": 200,
   "minLoaderVersion": "1.0.0",
@@ -15,10 +15,26 @@
     { "id": "noRespawns", "type": "bool", "label": "Flagships/artifacts don't respawn, no daily floating loot", "default": true },
     { "id": "noShipLoot", "type": "bool", "label": "World map ships drop nothing", "default": true },
 
+    { "id": "mutatorsHeader", "type": "header", "label": "Mutators — the whole game, every mission" },
+    { "id": "crewOneHp", "type": "bool", "label": "Crew have 1 HP", "default": false,
+      "help": "Every crewmate (Captain too) has 1 HP; HP from level-ups, armor items and weapons is removed. Armor still works." },
+    { "id": "enemiesOneHp", "type": "bool", "label": "Enemies have 1 HP", "default": false,
+      "help": "Bosses and enemies whose script phases depend on HP keep theirs. Higher difficulties may still add a bit." },
+    { "id": "explosiveShots", "type": "bool", "label": "Every shot explodes", "default": false,
+      "help": "Every gun, yours and the enemies', gets a small explosion on impact (1 damage per bullet; your own blasts hurt allies a little, like grenades)." },
+    { "id": "explosionRadius", "type": "int", "label": "Explosion radius", "default": 350, "min": 150, "max": 1000, "step": 50, "enabledBy": "explosiveShots" },
+    { "id": "deathBlasts", "type": "bool", "label": "Bots explode when scrapped", "default": false,
+      "help": "Every bot, crew and enemy, explodes on death — chain reactions included." },
+    { "id": "deathBlastDamage", "type": "int", "label": "Death blast damage", "default": 2, "min": 1, "max": 10, "enabledBy": "deathBlasts" },
+
     { "id": "hardcoreHeader", "type": "header", "label": "Hardcore" },
     { "id": "noCheckpoints", "type": "bool", "label": "No checkpoints (Load Checkpoint disabled in missions)", "default": false,
       "help": "Patches the game exe." },
     { "id": "quitForfeits", "type": "bool", "label": "Quitting mid-mission forfeits it (no quit-and-reload)", "default": false,
-      "help": "Missions save about once per turn, so quit + Continue rewinds the turn. With this on, continuing a mission from a save returns you to the world map, like Abort. A crash mid-mission also costs the mission. Ship, bars and shops are not affected." }
+      "help": "Missions save about once per turn, so quit + Continue rewinds the turn. With this on, continuing a mission from a save returns you to the world map, like Abort. A crash mid-mission also costs the mission. Ship, bars and shops are not affected." },
+    { "id": "permadeath", "type": "bool", "label": "Permadeath: scrapped crewmates are gone for good", "default": false,
+      "help": "A crewmate scrapped in a mission never comes back: if you bring them again, they are scrapped right after deployment. The Captain is exempt. Stored in your save; loading a checkpoint undoes it, so pair with 'No checkpoints'." },
+    { "id": "oneLife", "type": "bool", "label": "One life: losing a mission ends the run", "default": false,
+      "help": "Defeat, Abort or quitting a mission ends the run: every combat mission gets locked and you have to start a new game. Note that a game crash mid-mission counts as a loss too." }
   ]
 }

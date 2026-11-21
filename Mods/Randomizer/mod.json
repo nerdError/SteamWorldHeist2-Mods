@@ -3,7 +3,7 @@
   "name": "Randomizer",
   "version": "1.3.0",
   "author": "nerderror",
-  "description": "Shuffles missions on the world map, fixed item rewards (optionally story key items, with logic), shop stock, enemies, enemy hats, weapon stats, projectiles, utility and ability stats, class perks, crew stats, prices, and for fun: dialogue, barks, names, music, mission lighting, weapon models, crew hats and NPC looks. Two presets: Balanced and Chaos. Same seed = same game. Writes a spoiler log to SWH2ModLoader/Reports/Randomizer.",
+  "description": "Shuffles missions on the world map, fixed item rewards (optionally story key items, with logic), shop stock, enemies, enemy hats, weapon stats, projectiles, utility and ability stats, class perks, crew stats, prices, and for fun: dialogue, barks, names, music, mission lighting, weapon models, crew hats and NPC looks. Two presets: Balanced and Chaos, plus quick switches for all modes and for groups of options. Same seed = same game. Writes a spoiler log to SWH2ModLoader/Reports/Randomizer.",
   "plugin": "SWH2.Mod.Randomizer.dll",
   "order": 100,
   "minLoaderVersion": "1.0.0",
@@ -20,7 +20,7 @@
                     "damage": false, "damageMode": "balanced", "prices": false, "perks": false, "perkMode": "balanced",
                     "utilities": false, "utilityMode": "balanced", "abilities": false, "abilityMode": "balanced",
                     "crewStats": false, "crewStatsMode": "balanced", "projectiles": false, "projectileMode": "balanced",
-                    "dialogue": false, "barks": true, "npcs": true, "crewHats": true,
+                    "dialogue": false, "dialogueMode": "conversation", "barks": true, "npcs": true, "crewHats": true,
                     "weaponLooks": true, "weaponLookMode": "balanced", "music": true,
                     "environments": true, "environmentMode": "balanced", "names": false, "nameMode": "balanced" } },
         { "value": "chaos", "label": "Chaos — anything anywhere, still beatable",
@@ -36,6 +36,44 @@
                     "weaponLooks": true, "weaponLookMode": "chaos", "music": true,
                     "environments": true, "environmentMode": "chaos", "names": true, "nameMode": "chaos" } },
         { "value": "custom", "label": "Custom" }
+      ] },
+    { "id": "quickHeader", "type": "header", "label": "Quick switches" },
+    { "id": "style", "type": "choice", "label": "All modes", "default": "balanced",
+      "help": "Switches the Mode of every option below at once, without turning anything on or off.",
+      "choices": [
+        { "value": "balanced", "label": "Balanced",
+          "sets": { "missionMode": "balanced", "itemMode": "balanced", "shopMode": "balanced",
+                    "enemyMode": "balanced", "enemyFaction": "slot", "damageMode": "balanced", "perkMode": "balanced",
+                    "utilityMode": "balanced", "abilityMode": "balanced", "crewStatsMode": "balanced", "projectileMode": "balanced",
+                    "dialogueMode": "conversation", "weaponLookMode": "balanced", "environmentMode": "balanced", "nameMode": "balanced" } },
+        { "value": "chaos", "label": "Chaos",
+          "sets": { "missionMode": "chaos", "itemMode": "chaos", "shopMode": "chaos",
+                    "enemyMode": "chaos", "enemyFaction": "own", "damageMode": "chaos", "perkMode": "chaos",
+                    "utilityMode": "chaos", "abilityMode": "chaos", "crewStatsMode": "chaos", "projectileMode": "chaos",
+                    "dialogueMode": "all", "weaponLookMode": "chaos", "environmentMode": "chaos", "nameMode": "chaos" } },
+        { "value": "mixed", "label": "Mixed" }
+      ] },
+    { "id": "groupMain", "type": "choice", "label": "Main", "default": "on",
+      "help": "Missions, item rewards, shops, enemies and enemy hats.",
+      "choices": [
+        { "value": "on", "label": "On", "sets": { "missions": true, "items": true, "shops": true, "enemies": true, "hats": true } },
+        { "value": "off", "label": "Off", "sets": { "missions": false, "items": false, "shops": false, "enemies": false, "hats": false } },
+        { "value": "mixed", "label": "Mixed" }
+      ] },
+    { "id": "groupStats", "type": "choice", "label": "Stats", "default": "off",
+      "help": "Weapon, utility, ability and crew stats, prices, class perks, projectiles.",
+      "choices": [
+        { "value": "on", "label": "On", "sets": { "damage": true, "prices": true, "perks": true, "utilities": true, "abilities": true, "crewStats": true, "projectiles": true } },
+        { "value": "off", "label": "Off", "sets": { "damage": false, "prices": false, "perks": false, "utilities": false, "abilities": false, "crewStats": false, "projectiles": false } },
+        { "value": "mixed", "label": "Mixed" }
+      ] },
+    { "id": "groupCosmetic", "type": "choice", "label": "Cosmetic", "default": "light",
+      "help": "Light keeps the story readable: dialogue and names stay, the rest (barks, looks, hats, music, lighting) is shuffled.",
+      "choices": [
+        { "value": "all", "label": "All", "sets": { "dialogue": true, "barks": true, "npcs": true, "crewHats": true, "weaponLooks": true, "music": true, "environments": true, "names": true } },
+        { "value": "light", "label": "Light (no dialogue and names)", "sets": { "dialogue": false, "barks": true, "npcs": true, "crewHats": true, "weaponLooks": true, "music": true, "environments": true, "names": false } },
+        { "value": "off", "label": "Off", "sets": { "dialogue": false, "barks": false, "npcs": false, "crewHats": false, "weaponLooks": false, "music": false, "environments": false, "names": false } },
+        { "value": "mixed", "label": "Mixed" }
       ] },
 
     { "id": "missionsHeader", "type": "header", "label": "Missions" },

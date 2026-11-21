@@ -24,10 +24,21 @@ public sealed class ChallengesMod : IModPlugin
             NoCheckpoints.Apply(ctx);
             on.Add("no checkpoints");
         }
-        if (s.Bool("quitForfeits"))
+
+        if (s.Bool("crewOneHp")) { Mutators.CrewOneHp(ctx); on.Add("crew 1 HP"); }
+        if (s.Bool("enemiesOneHp")) { Mutators.EnemiesOneHp(ctx); on.Add("enemies 1 HP"); }
+        if (s.Bool("explosiveShots")) { Mutators.ExplosiveShots(ctx, s.Int("explosionRadius")); on.Add("explosive shots"); }
+        if (s.Bool("deathBlasts")) { Mutators.DeathBlasts(ctx, s.Int("deathBlastDamage")); on.Add("death blasts"); }
+
+        bool quit = s.Bool("quitForfeits"), permadeath = s.Bool("permadeath"), oneLife = s.Bool("oneLife");
+        if (quit || permadeath || oneLife)
         {
-            QuitForfeits.Apply(ctx);
-            on.Add("quitting forfeits");
+            // Procedural combat missions have no script; give them a shared one so the hooks run there too.
+            var missions = new MissionScripts(ctx, addGeneric: true);
+            if (quit) { QuitForfeits.Apply(ctx, missions); on.Add("quitting forfeits"); }
+            if (permadeath || oneLife) Hardcore.Apply(ctx, missions, permadeath, oneLife);
+            if (permadeath) on.Add("permadeath");
+            if (oneLife) on.Add("one life");
         }
 
         if (on.Count == 0) ctx.Log("No challenge selected — nothing to do.");

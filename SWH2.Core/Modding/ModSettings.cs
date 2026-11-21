@@ -21,6 +21,7 @@ public sealed class ModSettings
         if (values != null)
             foreach (var (k, v) in values)
                 if (Find(k) is { } def && Validate(def, v, out var value, out _)) _values[def.Id] = value; // unknown keys (renamed settings) and bad values are dropped
+        SyncPresets(null); // profiles from older versions lack newer presets
     }
 
     public IReadOnlyDictionary<string, string> Values => _values;
@@ -45,7 +46,8 @@ public sealed class ModSettings
 
     /// <summary>
     /// Validates and stores a value. Numbers are clamped to min/max. Picking a preset option also sets the
-    /// settings it lists; changing one of those by hand switches the preset to its "custom" option.
+    /// settings it lists; afterwards every other preset shows the option that matches the current values
+    /// (or its "custom" option when none does).
     /// </summary>
     public bool TrySet(string id, string value, out string? error)
     {
@@ -55,20 +57,24 @@ public sealed class ModSettings
         _values[def.Id] = value;
 
         if (def.IsPreset)
-        {
             foreach (var (k, v) in def.Choices!.First(c => c.Value == value).Sets ?? [])
                 if (Find(k) is { } target && !target.IsPreset && Validate(target, SettingDef.JsonText(v), out var set, out _))
                     _values[target.Id] = set;
-        }
-        else
-            foreach (var preset in _mod.Settings.Where(d => d.IsPreset))
-            {
-                var sets = preset.Choices!.First(c => c.Value == _values[preset.Id]).Sets;
-                if (sets == null || !sets.TryGetValue(def.Id, out var wanted)) continue;
-                if (Validate(def, SettingDef.JsonText(wanted), out var w, out _) && w == value) continue;
-                if (preset.Choices!.FirstOrDefault(c => c.Sets == null) is { } custom) _values[preset.Id] = custom.Value;
-            }
+        SyncPresets(def.IsPreset ? def : null);
         return true;
+    }
+
+    /// <summary>Selects in each preset (except <paramref name="picked"/>) the first option whose values all match.</summary>
+    void SyncPresets(SettingDef? picked)
+    {
+        foreach (var preset in _mod.Settings.Where(d => d.IsPreset && d != picked))
+        {
+            var match = preset.Choices!.FirstOrDefault(c => c.Sets != null && c.Sets.All(kv =>
+                Find(kv.Key) is not { } target || target.IsPreset ||
+                Validate(target, SettingDef.JsonText(kv.Value), out var w, out _) && w == _values[target.Id]))
+                ?? preset.Choices!.FirstOrDefault(c => c.Sets == null);
+            if (match != null) _values[preset.Id] = match.Value;
+        }
     }
 
     static bool Validate(SettingDef def, string value, out string result, out string? error)

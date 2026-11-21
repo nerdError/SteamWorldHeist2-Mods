@@ -18,6 +18,20 @@ Optional rules for harder runs; each one has its own switch.
   like Abort. A crash mid-mission costs the mission too. The ship, bars, shops, the tutorial and the prison break
   (which can't be aborted) are not affected. Pairs naturally with *No checkpoints*.
 
+- *Permadeath*: a crewmate scrapped in a mission is gone for good. Bring them again and they are scrapped right
+  after deployment. The Captain is exempt (the story needs them). Stored in your save; loading a checkpoint
+  undoes a death, so pair it with *No checkpoints*.
+- *One life*: losing a combat mission ends the run — defeat, Abort or quitting it all count (so does a crash
+  mid-mission). The next mission you start shows GAME OVER, every combat mission gets locked and a "Game over"
+  quest appears: start a new game. The run state is kept in `swh2_hardcore_runs.txt` next to your saves.
+
+**Mutators** (whole game, every mission, including procedural ones)
+- *Crew have 1 HP*: HP from level-ups, armor items and weapons is removed too. Armor still works.
+- *Enemies have 1 HP*: bosses and enemies whose script phases depend on HP keep theirs.
+- *Every shot explodes*: every gun, yours and the enemies', gets a small blast on impact (1 damage per bullet,
+  radius in the settings).
+- *Bots explode when scrapped*: crew and enemies alike — chain reactions included.
+
 Changing no-grind settings mid-save is fine; missions you already won get locked as soon as the mod is installed.
 
 ## Install
