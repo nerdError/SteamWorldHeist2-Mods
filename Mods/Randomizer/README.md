@@ -2,8 +2,9 @@
 
 Requires **SWH2 Mod Loader** 1.0+.
 
-Shuffles the game's fixed rewards and replaces enemies with enemies from the whole game. The same seed and settings
-always produce the same game, so you can race or share seeds.
+Shuffles missions on the world map, the game's fixed rewards (story key items too, with logic), shop stock, enemies,
+enemy hats, weapon stats, class perks, prices, dialogue, battle barks and NPC looks. The same seed and settings always
+produce the same game, so you can race or share seeds.
 
 Start a **new save** for the full experience (in an existing save only places you haven't visited change).
 
@@ -12,10 +13,17 @@ Pick one and you're done — a preset sets all options below. Changing any optio
 
 | | **Balanced** (default) | **Chaos** |
 |---|---|---|
+| Missions | shuffled inside each sea | shuffled across the whole map |
 | Item rewards | swap with similar tier / similar amounts | anything anywhere |
+| Story key items | stay | shuffled with logic (only to earlier places) |
+| Shops | stock swapped between shops, same kind and tier | any item in the game |
 | Enemies | any enemy from the game, with the health and damage of the one it replaces | any enemy, with its own stats (limited, see below) |
 | Enemy faction | of the replaced enemy — no infighting | its own — navy, pirates and atomics fight each other too |
-| Weapon damage, prices | unchanged | ±30% |
+| Enemy hats, barks, NPC looks | shuffled | shuffled |
+| Weapon stats | unchanged | every stat ±30% |
+| Prices | unchanged | ±30% |
+| Class perks | unchanged | any perk on any class and level |
+| Dialogue | unchanged | lines from the whole game |
 
 **Balanced** plays like the normal game: you meet new enemies and find gear in new places, but the difficulty
 curve stays the same.
@@ -43,6 +51,17 @@ from the originals, so changing the seed or options never stacks on top of an ea
 
 ## What gets randomized
 
+### Missions
+The mission markers on the world map stay where they are, but start other missions. A mission takes everything that
+belongs to it along: its map, enemies, script, loot, icon and the quests that ask for it.
+
+- **Balanced**: only inside the same sea (Western Caribbea, Eastern Caribbea, Arctica, Atomic City), so the
+  difficulty stays about the same.
+- **Chaos**: across the whole map — an Atomic City mission can wait at the start of the game.
+- **Never moved**: missions the story needs at a certain time (the ones that open new areas or lead to the next
+  quest), bosses, heists, the parley, shops, roaming locations and missions whose loot is a story item. In this game a
+  quest only counts a mission if it's active when you finish it, so moving these could block the story.
+
 ### Item rewards
 The game's **fixed** rewards are collected from four kinds of places and shuffled between them:
 
@@ -62,8 +81,21 @@ It's a **swap**, not new loot: the same set of rewards exists as in vanilla, jus
 - **Include money & fragment rewards**: if off, money and fragment rewards stay where they are and only real items move.
 - A gear item that lands in a spot which gave e.g. 12 fragments is given once, not 12 times.
 
-**Never moved**: key items and anything the story needs (items quests check for, items scripts refer to by name),
-and test/unused missions, so nothing can end up somewhere you can't reach.
+**Never moved** (unless *story key items* is on, see below): key items and anything the story needs (items quests check
+for, items scripts refer to by name), and test/unused missions, so nothing can end up somewhere you can't reach.
+
+### Story key items (off in Balanced, on in Chaos)
+Key items such as heist keys, blueprints or the diving tank can move to another reward place, with **logic** that keeps
+the game beatable (the idea comes from SWD2Randomizer). The game itself provides a story timeline: its debug starting
+points list which quests and missions are done and what you own at each step of the story. A key item only moves to a
+place the story finishes **earlier** than the step where the item first shows up. A place you finish before the item
+even exists can't need that item, and every item can only come earlier, so whatever needed it is still reachable.
+
+- Places whose timing isn't known take no key items: bounties, world map spawns, moved missions, and whatever the
+  *skip tutorial* start already counts as done.
+- Key items that cutscenes hand out (the booster, the shield, the ram, the atomic engine…), that also lie elsewhere,
+  or whose timing isn't known stay where they are. In practice about 4 key items can move, each to 1–3 places.
+- The spoiler log lists every key item with where it went and the story steps.
 
 ### Enemies
 Enemies in the game's spawn tables are replaced — both the enemies at the start of a mission and reinforcements,
@@ -89,15 +121,41 @@ spawns that need a special position (e.g. snipers on their perches), and enemies
 Good to know: special abilities can't be scaled. An atomic reviver with seabot health still revives its allies,
 a totem bearer still buffs — most likely its new faction's units, if it fights for another faction.
 
-### Weapon damage (off in Balanced, ±30% in Chaos)
-Every player weapon gets its own random damage change within ±N% (5–90%). Both shot and explosion damage.
+### Enemy hats (on in both)
+Enemies wear and drop each other's hats (normal and rare ones). It's a swap, so every hat still drops from some enemy.
+
+### Shops (Balanced or Chaos)
+What the shop podiums in bars, on the shop boats and in Atomic City sell.
+- **Balanced**: items swap between all shops, only with the same kind (weapon, utility, ship equipment, hat) and a
+  similar tier. "Sold once" stays with the item.
+- **Chaos**: every podium gets a random item from the whole game (anything with a price), no repeats in one shop.
+- Not changed: fragment packs and other podiums with a fixed price, the celestial gears, the buy-back podiums.
+
+### Weapon stats (off in Balanced, Chaos ±30%)
+Every player weapon, shot and explosion damage, within ±N% (5–90%):
+- **Balanced**: base damage changes, and crit (or random) damage makes up the difference, so the total stays about
+  the same (blast radius changes half as much).
+- **Chaos**: damage, crit, random damage and blast radius each change on their own.
 
 ### Prices (off in Balanced, ±30% in Chaos)
 Every item with a price gets a random change within ±N% (rounded to 5).
 
+### Class perks (off in Balanced, Chaos in Chaos)
+The level-up perks of the six classes move between classes. The starting perk (level 0) of each class stays, and every
+perk exists once, so no class gets one twice.
+- **Balanced**: only perks of the same level swap, abilities with abilities and stat bonuses with stat bonuses.
+- **Chaos**: any perk from level 1 up can land on any class and level.
+
+### Dialogue and barks
+- **Dialogue** (off in Balanced, Chaos: whole game): lines in conversations and cutscenes swap, either inside each
+  conversation or across the whole game. Answer choices and tutorial conversations stay. Works in every language.
+- **Barks** (on in both): the short lines crew and enemies shout in battle.
+
+### NPC looks (on in both)
+Bartenders, shopkeepers and townsfolk swap models. Characters that cutscenes use keep theirs.
+
 ## Not randomized
-- **Shops**: what shops sell is not changed (only the prices, if *Prices* is on).
-- Random loot drops, crew members and their classes, mission maps.
+- Random loot drops, crew members and their classes, mission maps, personal perks.
 
 ## Install
 Unpack into the game folder (so you get `SteamWorld Heist 2\Mods\Randomizer\mod.json`), or install with Vortex.

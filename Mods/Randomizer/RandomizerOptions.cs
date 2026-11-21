@@ -2,6 +2,13 @@ using SWH2.Modding;
 
 namespace SWH2.Mods.Randomizer;
 
+/// <summary>Balanced keeps the game's progression and economy close to vanilla; Chaos lets anything go anywhere.</summary>
+public enum Mode
+{
+    Balanced,
+    Chaos,
+}
+
 public enum ItemShuffleMode
 {
     /// <summary>Items only swap with items of a similar tier (and money with similar amounts), so progression feels like vanilla.</summary>
@@ -34,10 +41,19 @@ public sealed class RandomizerOptions
     public string Seed { get; set; } = "";
     public string Preset { get; set; } = "balanced";
 
+    // Which missions the world map markers start.
+    public bool ShuffleMissions { get; set; }
+    public Mode MissionMode { get; set; } = Mode.Balanced;
+
     // Fixed item rewards: mission master loot, region bounties, world map artifacts, quest rewards.
     public bool ShuffleItems { get; set; } = true;
     public ItemShuffleMode ItemMode { get; set; } = ItemShuffleMode.Balanced;
     public bool IncludeResources { get; set; } = true;
+    /// <summary>Story key items move too, but only to places the game reaches earlier than their own (see <see cref="ItemShuffle"/>).</summary>
+    public bool ShuffleKeyItems { get; set; }
+
+    public bool ShuffleShops { get; set; }
+    public Mode ShopMode { get; set; } = Mode.Balanced;
 
     // Enemies listed in spawn tables (initial spawns and reinforcements).
     public bool ShuffleEnemies { get; set; } = true;
@@ -45,39 +61,75 @@ public sealed class RandomizerOptions
     /// <summary>True: a replacement fights for the faction of the enemy it replaces. False: its own (factions fight each other).</summary>
     public bool EnemiesKeepSlotFaction { get; set; } = true;
     public EnemyLimit EnemyLimit { get; set; } = EnemyLimit.Fair;
+    public bool ShuffleEnemyHats { get; set; }
 
-    public bool RandomizeWeaponDamage { get; set; }
-    public int WeaponDamageVariance { get; set; } = 30;
+    public bool RandomizeWeaponStats { get; set; }
+    public Mode WeaponMode { get; set; } = Mode.Balanced;
+    public int WeaponVariance { get; set; } = 30;
 
     public bool RandomizePrices { get; set; }
     public int PriceVariance { get; set; } = 30;
+
+    public bool ShufflePerks { get; set; }
+    public Mode PerkMode { get; set; } = Mode.Balanced;
+
+    // Cosmetic.
+    public bool ShuffleDialogue { get; set; }
+    /// <summary>True: lines only move inside their own conversation. False: across the whole game.</summary>
+    public bool DialogueWithinConversation { get; set; } = true;
+    public bool ShuffleBarks { get; set; }
+    public bool ShuffleNpcLooks { get; set; }
+
+    static Mode ModeOf(ModSettings s, string id) => s.String(id) == "chaos" ? Mode.Chaos : Mode.Balanced;
 
     public static RandomizerOptions From(ModSettings s) => new()
     {
         Seed = s.String("seed"),
         Preset = s.String("preset"),
+        ShuffleMissions = s.Bool("missions"),
+        MissionMode = ModeOf(s, "missionMode"),
         ShuffleItems = s.Bool("items"),
         ItemMode = s.String("itemMode") == "chaos" ? ItemShuffleMode.Chaos : ItemShuffleMode.Balanced,
         IncludeResources = s.Bool("resources"),
+        ShuffleKeyItems = s.Bool("keyItems"),
+        ShuffleShops = s.Bool("shops"),
+        ShopMode = ModeOf(s, "shopMode"),
         ShuffleEnemies = s.Bool("enemies"),
         EnemyStats = s.String("enemyMode") == "chaos" ? EnemyStats.Chaos : EnemyStats.Balanced,
         EnemiesKeepSlotFaction = s.String("enemyFaction") != "own",
         EnemyLimit = EnemyLimit.From(s.String("enemyLimit")),
-        RandomizeWeaponDamage = s.Bool("damage"),
-        WeaponDamageVariance = s.Int("damagePct"),
+        ShuffleEnemyHats = s.Bool("hats"),
+        RandomizeWeaponStats = s.Bool("damage"),
+        WeaponMode = ModeOf(s, "damageMode"),
+        WeaponVariance = s.Int("damagePct"),
         RandomizePrices = s.Bool("prices"),
         PriceVariance = s.Int("pricesPct"),
+        ShufflePerks = s.Bool("perks"),
+        PerkMode = ModeOf(s, "perkMode"),
+        ShuffleDialogue = s.Bool("dialogue"),
+        DialogueWithinConversation = s.String("dialogueMode") != "all",
+        ShuffleBarks = s.Bool("barks"),
+        ShuffleNpcLooks = s.Bool("npcs"),
     };
+
+    static string Lower(Mode m) => m.ToString().ToLowerInvariant();
 
     public string Summary()
     {
         var parts = new List<string> { Preset };
-        if (ShuffleItems) parts.Add($"items:{ItemMode.ToString().ToLowerInvariant()}{(IncludeResources ? "+res" : "")}");
+        if (ShuffleMissions) parts.Add($"missions:{Lower(MissionMode)}");
+        if (ShuffleItems) parts.Add($"items:{ItemMode.ToString().ToLowerInvariant()}{(IncludeResources ? "+res" : "")}{(ShuffleKeyItems ? "+key" : "")}");
+        if (ShuffleShops) parts.Add($"shops:{Lower(ShopMode)}");
         if (ShuffleEnemies)
             parts.Add($"enemies:{EnemyStats.ToString().ToLowerInvariant()}" +
                       $"{(EnemyStats == EnemyStats.Chaos ? "/" + EnemyLimit.Id : "")}+{(EnemiesKeepSlotFaction ? "slot" : "own")}-faction");
-        if (RandomizeWeaponDamage) parts.Add($"damage±{WeaponDamageVariance}%");
+        if (ShuffleEnemyHats) parts.Add("hats");
+        if (RandomizeWeaponStats) parts.Add($"weapons:{Lower(WeaponMode)}±{WeaponVariance}%");
         if (RandomizePrices) parts.Add($"prices±{PriceVariance}%");
+        if (ShufflePerks) parts.Add($"perks:{Lower(PerkMode)}");
+        if (ShuffleDialogue) parts.Add($"dialogue:{(DialogueWithinConversation ? "conversation" : "all")}");
+        if (ShuffleBarks) parts.Add("barks");
+        if (ShuffleNpcLooks) parts.Add("npcs");
         return $"seed {Seed} ({string.Join(", ", parts)})";
     }
 }

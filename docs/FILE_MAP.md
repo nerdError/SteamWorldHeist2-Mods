@@ -240,12 +240,27 @@ SteamWorld Heist 2/
 
 | Модуль | Файлы |
 |---|---|
-| Перемешивание фиксированных наград | `missions*.de` (MasterLoot), `worldmap_regions.xml` (Bounties, ReputationSpawns), `quests.xml` (ItemRewards) |
+| Миссии на карте | `WorldMap/Maps/WorldMap.tmx` — значение свойства `Mission` у объектов-меток (сами метки, их имя и слой не трогаются) |
+| Перемешивание фиксированных наград (+ логика ключевых предметов) | `missions*.de` (MasterLoot), `worldmap_regions.xml` (Bounties, ReputationSpawns), `quests.xml` (ItemRewards); таймлайн сюжета — из `outsets.xml` |
+| Магазины | `Patchsets/*.le` — `CustomEntity` с `<Definition>itemshop</Definition>`, свойства `Item`/`OneTime` (подиумы в барах, на лодках-магазинах, в Atomic City) |
 | Враги | `spawn_tables.de` |
-| Урон оружия | `weapons.xml` |
+| Шапки врагов | `entities.enemies.*.xml` → `Actor/Hat`, `Actor/RareHat` |
+| Характеристики оружия | `weapons.xml` (`ShootDamage`/`ExplosiveDamage`: `Amount`, `CritAmount`, `AmountRandom`, `DamageRadius`) |
+| Перки классов | `jobs.xml` → `Job/Upgrades/Upgrade` (уровень 0 не трогается) |
+| Реплики / выкрики | `conversations.xml` (`Speak@Text`), `barks.xml` (`String`) — меняются ключи строк, тексты в `Language/*.csv` не трогаются |
+| Внешность NPC | `entities.npc.xml` → `SkinnedCharacter/File` |
 | Цены | `weapons.xml`, `utilities.xml`, `ship_equipment.xml`, `hats.xml`, `special_items.xml`, `key_items.xml` |
 | Челлендж «без гринда» | `quests.xml` (+2 скрытых квеста на миссию: `nogrind_won_*` → `nogrind_lock_*` с `LockMissions`), `worldmap_regions.xml` (`RespawnIfAchievedReputation`, лут `worldmap_ghost`), `worldmap_spawns.xml` (спауны `wm_loot`), `entities.worldmap.xml` (`LootEntity` кораблей) |
 
 Не перемещаются: ключевые предметы (`key_items.xml`), предметы, упомянутые в условиях квестов
 (`quests.xml` `<Parameter>`) и в строках Lua — от них зависит сюжет. Тестовые и ни откуда не
 используемые миссии исключены.
+
+Опция «ключевые предметы»: ключевой предмет переносится только в место, которое сюжет (по `outsets.xml` —
+отладочные точки старта, цепочка через `Template`, со списками пройденных квестов/миссий и предметов) проходит
+РАНЬШЕ, чем предмет впервые появляется. Предметы, которые выдаёт Lua (`GiveItem`) или которые лежат ещё где-то
+(`.le`, `.tmx`, `entities.worldmap.xml`), и места с неизвестным временем (bounty, спауны карты, перемещённые миссии,
+всё пройденное в старте «skip tutorial») не участвуют.
+
+Важно для миссий: условие квеста `mission` засчитывается, только если квест активен в момент победы
+(`mission_static` — в любое время). Поэтому миссии, нужные сюжету, не перемещаются (`Story.ProgressionMissions`).

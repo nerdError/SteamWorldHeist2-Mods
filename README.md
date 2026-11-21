@@ -9,14 +9,18 @@
 
 ## English
 
-**SteamWorld Heist 2 Randomizer** (SWH2 randomizer) — a seeded randomizer mod that shuffles item rewards, enemies,
-weapon damage and shop prices, plus a mod loader / mod manager and other mods for SteamWorld Heist 2 (PC, Steam):
+**SteamWorld Heist 2 Randomizer** (SWH2 randomizer) — a seeded randomizer mod that shuffles missions, item rewards,
+shops, enemies, weapon stats, class perks, prices and dialogue, plus a mod loader / mod manager and other mods for SteamWorld Heist 2 (PC, Steam):
 turbo battles, challenges and a cheat menu.
 
 ### SteamWorld Heist 2 Randomizer
-- **Item randomizer** — fixed rewards (loot, quest rewards) are shuffled; key items stay in place, so progression is never blocked.
+- **Mission randomizer** — world map markers start other missions (inside each sea or across the whole map); story missions stay.
+- **Item randomizer** — fixed rewards (loot, quest rewards) are shuffled; story key items stay, or move with logic (only to places the story reaches earlier), so progression is never blocked.
+- **Shop randomizer** — shop stock swapped between shops (same kind and tier) or drawn from the whole game.
 - **Enemy randomizer** — enemies are replaced with enemies from the whole game (optionally with their own faction, so they fight each other).
-- **Damage and price randomizer** — weapon damage and shop prices within a chosen range.
+- **Enemy hats** — enemies wear and drop each other's hats.
+- **Weapon stats, perks and prices** — weapon stats (balanced trade-off or each stat on its own), class perks moved between classes, prices within a chosen range.
+- **Cosmetic** — dialogue lines, battle barks and NPC looks shuffled.
 - **Seeds** — the same seed and settings give the same game on any PC: race or share seeds; a spoiler log is written for every seed.
 - **Presets** — *Balanced* (plays like the normal game) and *Chaos* (wild but beatable).
 
@@ -30,7 +34,7 @@ A mod manager / modding framework for **SteamWorld Heist 2** and four mods built
 | What | Folder | Nexus archive |
 |---|---|---|
 | **SWH2 Mod Loader** — the base: mod manager (GUI + `swh2` CLI) and the mod API | `SWH2.Core`, `SWH2.ModLoader`, `SWH2.Cli` | `SWH2ModLoader-<ver>.zip` |
-| **Randomizer** — shuffles rewards, enemies, damage, prices (seeded) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
+| **Randomizer** — shuffles missions, rewards, shops, enemies, stats, perks, text (seeded) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
 | **Turbo Battles** — speeds up enemy turns and enemy/reinforcement reveals | `Mods/Turbo` | `Turbo-<ver>.zip` |
 | **Challenge Manager** — challenges: "no grind", "no checkpoints" | `Mods/Challenges` | `Challenges-<ver>.zip` |
 | **Cheat Menu** — in-mission cheats: a loader window + hotkeys, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
@@ -124,7 +128,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | `SWH2.Core/Pipeline.cs` | install / restore / extract / roundtrip — shared by GUI and CLI |
 | `SWH2.ModLoader/` | WinForms GUI (mod manager) |
 | `SWH2.Cli/` | the `swh2` console tool |
-| `Mods/Randomizer/` | `ItemShuffle`, `EnemyShuffle`, `StatRandomizer` |
+| `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `TextShuffle`, `LookShuffle`; `Story` (progression, story timeline) |
 | `Mods/Turbo/` | battle time-scale patch (code from `exe_patch.py`, ported as bytes + a relocation table) |
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
 | `Mods/CheatMenu/` | Lua backend and mission hook (`Lua/*.lua`, embedded in the dll), modifiers, `CheatForm` window, `CheatClient` (file-based protocol) |
@@ -134,9 +138,9 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 
 ### Ideas for the future
 
-- Shuffle hats, starting crew/jobs, starting weapons; `loot_tables.xml`, hiring prices, upgrades.
+- Shuffle starting crew/jobs, starting weapons; `loot_tables.xml`, hiring prices, upgrades.
 - Challenges: turn limit, permadeath, per-mission mutators (see MODDING.md).
-- Logic-aware placement (like SWD2Randomizer) so key items can be shuffled too.
+- Key item logic with map knowledge (which areas need diving, boost, ram…) so more key items can move.
 
 ### License
 
@@ -146,14 +150,18 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 
 ## Русский
 
-**Рандомайзер SteamWorld Heist 2** (SWH2 Randomizer) — мод-рандомайзер по сиду: перемешивает награды, врагов, урон
-оружия и цены в магазинах. Плюс загрузчик/менеджер модов и другие моды для SteamWorld Heist 2: ускорение боёв,
+**Рандомайзер SteamWorld Heist 2** (SWH2 Randomizer) — мод-рандомайзер по сиду: перемешивает миссии, награды, магазины,
+врагов, характеристики оружия, перки классов, цены и реплики. Плюс загрузчик/менеджер модов и другие моды для SteamWorld Heist 2: ускорение боёв,
 челленджи и чит-меню.
 
 ### Рандомайзер SteamWorld Heist 2
-- **Рандомизация предметов** — фиксированные награды перемешиваются; ключевые предметы не трогаются, прохождение не ломается.
+- **Рандомизация миссий** — метки на карте запускают другие миссии (внутри своего моря или по всей карте); сюжетные миссии на месте.
+- **Рандомизация предметов** — фиксированные награды перемешиваются; ключевые предметы остаются или переносятся с логикой (только туда, куда сюжет доходит раньше), прохождение не ломается.
+- **Рандомизация магазинов** — ассортимент меняется между магазинами (тот же вид и тир) или берётся из всей игры.
 - **Рандомизация врагов** — враги заменяются врагами со всей игры (по желанию — со своей фракцией, тогда они дерутся между собой).
-- **Урон и цены** — случайный разброс урона оружия и цен в магазинах.
+- **Шапки врагов** — враги носят и роняют шапки друг друга.
+- **Оружие, перки, цены** — характеристики оружия (сбалансированный обмен или каждая сама по себе), перки классов меняются между классами, цены в заданном разбросе.
+- **Косметика** — реплики в диалогах, выкрики в бою и внешность NPC.
 - **Сиды** — одинаковый сид и настройки дают одинаковую игру на любом ПК; для каждого сида пишется спойлер-лог.
 - **Пресеты** — *Balanced* (как обычная игра) и *Chaos* (безумно, но проходимо).
 
@@ -167,7 +175,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | Что | Папка | Архив для Nexus |
 |---|---|---|
 | **SWH2 Mod Loader** — основа: менеджер модов (GUI + CLI `swh2`), API для модов | `SWH2.Core`, `SWH2.ModLoader`, `SWH2.Cli` | `SWH2ModLoader-<ver>.zip` |
-| **Randomizer** — перемешивание наград, врагов, урона, цен (по сиду) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
+| **Randomizer** — перемешивание миссий, наград, магазинов, врагов, характеристик, перков, реплик (по сиду) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
 | **Turbo Battles** — ускорение ходов врагов и показа врагов/подкреплений | `Mods/Turbo` | `Turbo-<ver>.zip` |
 | **Challenge Manager** — челленджи: «без гринда», «без чекпоинтов» | `Mods/Challenges` | `Challenges-<ver>.zip` |
 | **Cheat Menu** — читы в миссиях: окно в загрузчике + горячие клавиши, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
@@ -261,7 +269,7 @@ PolySharp (полифиллы на этапе компиляции), недос�
 | `SWH2.Core/Pipeline.cs` | install / restore / extract / roundtrip — общие для GUI и CLI |
 | `SWH2.ModLoader/` | WinForms GUI (менеджер модов) |
 | `SWH2.Cli/` | консольная утилита `swh2` |
-| `Mods/Randomizer/` | `ItemShuffle`, `EnemyShuffle`, `StatRandomizer` |
+| `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `TextShuffle`, `LookShuffle`; `Story` (progression, story timeline) |
 | `Mods/Turbo/` | патч масштаба времени боя (код из `exe_patch.py`, перенесён байтами + таблица релокаций) |
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
 | `Mods/CheatMenu/` | Lua-бэкенд и хук миссий (`Lua/*.lua`, встроены в dll), модификаторы, окно `CheatForm`, `CheatClient` (файловый протокол) |
@@ -271,9 +279,9 @@ PolySharp (полифиллы на этапе компиляции), недос�
 
 ### Идеи на будущее
 
-- Перемешивание шляп, стартового экипажа/профессий, стартового оружия; `loot_tables.xml`, цены найма, апгрейды.
+- Перемешивание стартового экипажа/профессий, стартового оружия; `loot_tables.xml`, цены найма, апгрейды.
 - Челленджи: лимит ходов, permadeath, мутаторы на миссию (см. MODDING.md).
-- Логика доступности (как в SWD2Randomizer) для перемешивания ключевых предметов.
+- Логика ключевых предметов со знанием карты (где нужен нырок, ускоритель, таран…), чтобы переносить больше ключевых предметов.
 
 ### Лицензия
 

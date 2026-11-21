@@ -14,6 +14,9 @@ public sealed class RandomizerContext(ModContext mod, RandomizerOptions options)
     /// <summary>The spoiler log (saved as the mod's report).</summary>
     public ReportLog Spoiler => mod.Report;
 
+    /// <summary>Missions that now start from another world map marker (set by <see cref="MissionShuffle"/>), so when they become reachable is unknown.</summary>
+    public HashSet<string> MovedMissions { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Each module gets its own generator derived from the seed, so turning one option on or off
     /// doesn't change what the other modules produce for the same seed.

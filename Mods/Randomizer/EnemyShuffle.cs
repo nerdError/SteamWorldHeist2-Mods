@@ -21,7 +21,7 @@ namespace SWH2.Mods.Randomizer;
 /// </summary>
 public static class EnemyShuffle
 {
-    static readonly string[] EnemyFiles =
+    public static readonly string[] EnemyFiles =
     [
         "Definitions/entities.enemies.xml",
         "Definitions/entities.enemies.navy.xml",

@@ -36,7 +36,9 @@ four mods published separately on Nexus: Randomizer, Turbo (exe), Challenges, Ch
 ## Rules
 - Never modify the game folder in tests; use `swh2 install --dry-run <dir>` or copy the paks into a fake game folder.
 - After changing XML handling run `swh2 roundtrip` (must report 0 different / 0 failed).
-- Never move progression items (key items, items referenced by quest `<Parameter>`s or Lua strings).
+- Never move progression items (key items, items referenced by quest `<Parameter>`s or Lua strings) — except key items
+  through the Randomizer's opt-in key item logic (`ItemShuffle.PlaceKeyItems`: only to places the `outsets.xml` story
+  timeline reaches earlier). Never move missions the story needs (`Story.ProgressionMissions`).
 - Lua mods: build from the ORIGINAL pak (backup), run `tools/mods/sim_sandbox.py` before installing; mission sandbox has no pcall.
 - Exe patches for players go in mods via `ctx.Exe.Patch(rva, originalBytes, newBytes)` / `AddSection` (see Mods/Turbo).
   `tools/re/exe_patch.py` is only for prototyping; verify a port byte-for-byte against its output. Game must be closed for any install.
