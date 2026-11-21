@@ -1,4 +1,4 @@
-# SWH2 Mod Loader + mods for SteamWorld Heist 2
+# SteamWorld Heist 2 Randomizer, Mod Loader and Mods
 
 [![build](https://github.com/nerdError/SteamWorldHeist2-Mods/actions/workflows/build.yml/badge.svg)](https://github.com/nerdError/SteamWorldHeist2-Mods/actions/workflows/build.yml)
 
@@ -8,6 +8,21 @@
 > you need your own copy of the game.
 
 ## English
+
+**SteamWorld Heist 2 Randomizer** (SWH2 randomizer) — a seeded randomizer mod that shuffles item rewards, enemies,
+weapon damage and shop prices, plus a mod loader / mod manager and other mods for SteamWorld Heist 2 (PC, Steam):
+turbo battles, challenges and a cheat menu.
+
+### SteamWorld Heist 2 Randomizer
+- **Item randomizer** — fixed rewards (loot, quest rewards) are shuffled; key items stay in place, so progression is never blocked.
+- **Enemy randomizer** — enemies are replaced with enemies from the whole game (optionally with their own faction, so they fight each other).
+- **Damage and price randomizer** — weapon damage and shop prices within a chosen range.
+- **Seeds** — the same seed and settings give the same game on any PC: race or share seeds; a spoiler log is written for every seed.
+- **Presets** — *Balanced* (plays like the normal game) and *Chaos* (wild but beatable).
+
+Details: [Mods/Randomizer/README.md](Mods/Randomizer/README.md).
+
+### Mod loader
 
 A mod manager / modding framework for **SteamWorld Heist 2** and four mods built on it. Everything targets
 **.NET Framework 4.8**, which ships with Windows 10 (1903+) and 11 — players don't need to install anything.
@@ -130,6 +145,21 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 ---
 
 ## Русский
+
+**Рандомайзер SteamWorld Heist 2** (SWH2 Randomizer) — мод-рандомайзер по сиду: перемешивает награды, врагов, урон
+оружия и цены в магазинах. Плюс загрузчик/менеджер модов и другие моды для SteamWorld Heist 2: ускорение боёв,
+челленджи и чит-меню.
+
+### Рандомайзер SteamWorld Heist 2
+- **Рандомизация предметов** — фиксированные награды перемешиваются; ключевые предметы не трогаются, прохождение не ломается.
+- **Рандомизация врагов** — враги заменяются врагами со всей игры (по желанию — со своей фракцией, тогда они дерутся между собой).
+- **Урон и цены** — случайный разброс урона оружия и цен в магазинах.
+- **Сиды** — одинаковый сид и настройки дают одинаковую игру на любом ПК; для каждого сида пишется спойлер-лог.
+- **Пресеты** — *Balanced* (как обычная игра) и *Chaos* (безумно, но проходимо).
+
+Подробнее: [Mods/Randomizer/README.md](Mods/Randomizer/README.md).
+
+### Загрузчик модов
 
 Менеджер модов / фреймворк для модов **SteamWorld Heist 2** и четыре мода на нём. Всё на **.NET Framework 4.8** —
 он встроен в Windows 10 (1903+) и 11, игрокам ничего не нужно докачивать.
