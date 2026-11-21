@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SWH2</RootNamespace>
+    <!-- Version of the mod loader and of the mod API (mod.json "minLoaderVersion"). -->
+    <Version>1.0.0</Version>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Shipped next to the loader (plus System.Memory etc.); plugins resolve them from there. -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>swh2</AssemblyName>
+    <RootNamespace>SWH2.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SWH2.Core\SWH2.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.Randomizer</AssemblyName>
+    <RootNamespace>SWH2.Mods.Randomizer</RootNamespace>
+  </PropertyGroup>
+
+</Project>

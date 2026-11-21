@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Everything targets .NET Framework 4.8: it ships with Windows 10 (1903+) and Windows 11, so players don't have to
+    install a runtime. New C# features come from LangVersion=latest + PolySharp (compile-time polyfills, nothing shipped).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PolySharp" Version="1.15.0" PrivateAssets="all" />
+    <!-- BCL stand-ins for APIs .NET Framework lacks (SWH2.Core/Compat.cs). -->
+    <Using Include="SWH2.Compat" />
+  </ItemGroup>
+</Project>

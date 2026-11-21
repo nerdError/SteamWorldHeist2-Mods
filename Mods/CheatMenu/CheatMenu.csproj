@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.CheatMenu</AssemblyName>
+    <RootNamespace>SWH2.Mods.CheatMenu</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Part of .NET Framework: nothing extra to ship. -->
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <EmbeddedResource Include="Lua\*.lua;Lua\*.txt" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>SWH2ModLoader</AssemblyName>
+    <RootNamespace>SWH2.ModLoader</RootNamespace>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Version>1.0.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SWH2.Core\SWH2.Core.csproj" />
+  </ItemGroup>
+
+</Project>

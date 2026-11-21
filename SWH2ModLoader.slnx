@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/Loader/">
+    <Project Path="SWH2.Core/SWH2.Core.csproj" />
+    <Project Path="SWH2.Cli/SWH2.Cli.csproj" />
+    <Project Path="SWH2.ModLoader/SWH2.ModLoader.csproj" />
+  </Folder>
+  <Folder Name="/Mods/">
+    <Project Path="Mods/Randomizer/Randomizer.csproj" />
+    <Project Path="Mods/Turbo/Turbo.csproj" />
+    <Project Path="Mods/Challenges/Challenges.csproj" />
+    <Project Path="Mods/CheatMenu/CheatMenu.csproj" />
+  </Folder>
+</Solution>

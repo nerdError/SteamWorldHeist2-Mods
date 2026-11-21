@@ -1,0 +1,24 @@
+{
+  "id": "Challenges",
+  "name": "Challenge Manager",
+  "version": "1.0.0",
+  "author": "nerderror",
+  "description": "Optional rules for harder runs, each with its own switch. Works on its own or together with the Randomizer. 'No checkpoints' patches the game exe (supported Steam build only).",
+  "plugin": "SWH2.Mod.Challenges.dll",
+  "order": 200,
+  "minLoaderVersion": "1.0.0",
+  "patchesExe": true,
+  "settings": [
+    { "id": "noGrindHeader", "type": "header", "label": "No grind — farmable rewards become one-time" },
+    { "id": "lockReplays", "type": "bool", "label": "Won missions can't be replayed", "default": true,
+      "help": "Story rematches (e.g. the Fabio fight) stay open until their quest is done. Stored in your save." },
+    { "id": "noRespawns", "type": "bool", "label": "Flagships/artifacts don't respawn, no daily floating loot", "default": true },
+    { "id": "noShipLoot", "type": "bool", "label": "World map ships drop nothing", "default": true },
+
+    { "id": "hardcoreHeader", "type": "header", "label": "Hardcore" },
+    { "id": "noCheckpoints", "type": "bool", "label": "No checkpoints (Load Checkpoint disabled in missions)", "default": false,
+      "help": "Patches the game exe." },
+    { "id": "quitForfeits", "type": "bool", "label": "Quitting mid-mission forfeits it (no quit-and-reload)", "default": false,
+      "help": "Missions save about once per turn, so quit + Continue rewinds the turn. With this on, continuing a mission from a save returns you to the world map, like Abort. A crash mid-mission also costs the mission. Ship, bars and shops are not affected." }
+  ]
+}

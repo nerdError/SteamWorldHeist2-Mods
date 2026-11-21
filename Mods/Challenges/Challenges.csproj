@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.Challenges</AssemblyName>
+    <RootNamespace>SWH2.Mods.Challenges</RootNamespace>
+  </PropertyGroup>
+
+</Project>

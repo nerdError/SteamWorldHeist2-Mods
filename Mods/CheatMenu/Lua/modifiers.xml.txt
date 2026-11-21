@@ -1,0 +1,14 @@
+
+	<!-- SWH2 CheatMenu -->
+	<Modifier Name="cheat_god">
+		<LocalizedNameId>cheat_god_name</LocalizedNameId>
+		<StatusFlags>invulnerable, buddha</StatusFlags>
+	</Modifier>
+	<Modifier Name="cheat_spinup">
+		<LocalizedNameId>cheat_spinup_name</LocalizedNameId>
+		<StatusFlags>spin_up</StatusFlags>
+	</Modifier>
+	<Modifier Name="cheat_freeze">
+		<LocalizedNameId>cheat_freeze_name</LocalizedNameId>
+		<StatusFlags>ai_disabled</StatusFlags>
+	</Modifier>

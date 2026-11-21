@@ -1,0 +1,50 @@
+{
+  "id": "Randomizer",
+  "name": "Randomizer",
+  "version": "1.0.0",
+  "author": "nerderror",
+  "description": "Shuffles fixed item rewards (mission loot, bounties, world map artifacts, quest rewards) and replaces enemies with enemies from the whole game; optionally weapon damage and prices. Two presets: Balanced and Chaos. Same seed = same game. Story items never move. Writes a spoiler log to SWH2ModLoader/Reports/Randomizer.",
+  "plugin": "SWH2.Mod.Randomizer.dll",
+  "order": 100,
+  "minLoaderVersion": "1.0.0",
+  "settings": [
+    { "id": "seed", "type": "seed", "label": "Seed", "help": "Leave empty for a random seed (it is saved after installing)." },
+    { "id": "preset", "type": "choice", "label": "Preset", "default": "balanced",
+      "help": "Sets all options below. Changing any of them by hand switches to Custom.",
+      "choices": [
+        { "value": "balanced", "label": "Balanced — plays like the normal game",
+          "sets": { "items": true, "itemMode": "balanced", "resources": true,
+                    "enemies": true, "enemyMode": "balanced", "enemyFaction": "slot", "enemyLimit": "fair",
+                    "damage": false, "prices": false } },
+        { "value": "chaos", "label": "Chaos — anything anywhere, still beatable",
+          "sets": { "items": true, "itemMode": "chaos", "resources": true,
+                    "enemies": true, "enemyMode": "chaos", "enemyFaction": "own", "enemyLimit": "fair",
+                    "damage": true, "damagePct": 30, "prices": true, "pricesPct": 30 } },
+        { "value": "custom", "label": "Custom" }
+      ] },
+
+    { "id": "itemsHeader", "type": "header", "label": "Items" },
+    { "id": "items", "type": "bool", "label": "Shuffle fixed item rewards", "default": true,
+      "help": "Mission loot, region bounties, world map artifacts/flagships, quest rewards. Story items never move. Shops are not changed." },
+    { "id": "itemMode", "type": "choice", "label": "Mode", "default": "balanced", "enabledBy": "items",
+      "choices": [ { "value": "balanced", "label": "Balanced (similar tier, similar amounts)" }, { "value": "chaos", "label": "Chaos (anything anywhere)" } ] },
+    { "id": "resources", "type": "bool", "label": "Include money & fragment rewards", "default": true, "enabledBy": "items" },
+
+    { "id": "enemiesHeader", "type": "header", "label": "Enemies" },
+    { "id": "enemies", "type": "bool", "label": "Randomize enemies", "default": true,
+      "help": "Enemies in spawn tables (initial spawns and reinforcements) are replaced by enemies from the whole game, without repeats inside a table. Bosses and scripted enemies stay." },
+    { "id": "enemyMode", "type": "choice", "label": "Stats", "default": "balanced", "enabledBy": "enemies",
+      "choices": [ { "value": "balanced", "label": "Balanced (health & damage of the enemy it replaces)" }, { "value": "chaos", "label": "Chaos (keeps its own stats)" } ] },
+    { "id": "enemyFaction", "type": "choice", "label": "Faction", "default": "slot", "enabledBy": "enemies",
+      "choices": [ { "value": "slot", "label": "Of the enemy it replaces (no infighting)" }, { "value": "own", "label": "Its own (factions fight each other)" } ] },
+    { "id": "enemyLimit", "type": "choice", "label": "Chaos limits", "default": "fair", "enabledBy": "enemies",
+      "help": "Chaos stats only. Caps how much stronger an enemy can be than the one it replaces, and stronger enemies come in smaller numbers.",
+      "choices": [ { "value": "fair", "label": "Fair (health up to 2x, damage up to 1.5x)" }, { "value": "loose", "label": "Loose (health up to 3x, damage up to 2x)" }, { "value": "off", "label": "Off (may be unbeatable)" } ] },
+
+    { "id": "statsHeader", "type": "header", "label": "Stats" },
+    { "id": "damage", "type": "bool", "label": "Randomize player weapon damage", "default": false },
+    { "id": "damagePct", "type": "int", "label": "Damage variance ±%", "default": 30, "min": 5, "max": 90, "step": 5, "enabledBy": "damage" },
+    { "id": "prices", "type": "bool", "label": "Randomize item prices", "default": false },
+    { "id": "pricesPct", "type": "int", "label": "Price variance ±%", "default": 30, "min": 5, "max": 90, "step": 5, "enabledBy": "prices" }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "Turbo",
+  "name": "Turbo Battles",
+  "version": "1.0.0",
+  "author": "nerderror",
+  "description": "Speeds up the waiting in battles: enemy turns and the camera showing enemies, turrets and reinforcements. Cutscenes, dialogue and your own turn stay at normal speed. Patches the game exe (supported Steam build only).",
+  "plugin": "SWH2.Mod.Turbo.dll",
+  "order": 300,
+  "minLoaderVersion": "1.0.0",
+  "patchesExe": true,
+  "settings": [
+    { "id": "enemySpeed", "type": "float", "label": "Enemy turn speed ×", "default": 3, "min": 1, "max": 8, "step": 0.5 },
+    { "id": "introSpeed", "type": "float", "label": "Enemy/turret/reinforcement intro speed ×", "default": 6, "min": 1, "max": 10, "step": 0.5 }
+  ]
+}

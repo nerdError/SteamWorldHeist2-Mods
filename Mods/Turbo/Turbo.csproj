@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.Turbo</AssemblyName>
+    <RootNamespace>SWH2.Mods.Turbo</RootNamespace>
+  </PropertyGroup>
+
+</Project>

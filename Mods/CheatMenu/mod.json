@@ -1,0 +1,13 @@
+{
+  "id": "CheatMenu",
+  "name": "Cheat Menu",
+  "version": "1.0.0",
+  "author": "nerderror",
+  "description": "In-mission cheats from a window in the loader (Cheats… button) or hotkeys Ctrl+Alt+1…8: win mission, heal crew, kill/weaken enemies, alarm off, give any item; toggles: invulnerable crew, frozen enemies, attacks don't end turn.",
+  "plugin": "SWH2.Mod.CheatMenu.dll",
+  "order": 50,
+  "minLoaderVersion": "1.0.0",
+  "tool": "Cheats…",
+  "command": "cheat",
+  "commandHelp": "swh2 cheat win|heal|kill|weaken|alarm_off | give ITEM | god|freeze|spinup on|off | status"
+}

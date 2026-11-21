@@ -1,0 +1,17 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)..\Directory.Build.props" />
+  <!-- Shared settings for mod plugins. Each mod builds into bin\<Config>\<Id>\ = a ready Mods\<Id>\ folder. -->
+  <PropertyGroup>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <DebugType>embedded</DebugType>
+    <!-- Project name = mod id; the output folder is a ready-to-copy Mods\<Id>\ folder. -->
+    <OutputPath>bin\$(Configuration)\$(MSBuildProjectName)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The loader provides SWH2.Core at runtime: reference it, never copy it next to the plugin. -->
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\SWH2.Core\SWH2.Core.csproj" Private="false" ExcludeAssets="runtime" />
+    <None Include="mod.json;README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
