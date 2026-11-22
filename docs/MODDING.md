@@ -239,9 +239,34 @@ Reef (раскладки `west_caribbea_02/23/09`; цели loot_master / kill_a
 `mod_camp_q1→q2→q3→end` + скрытые замки, диалог капитана на каждом шаге, `TacticsScript` финала, награда 500,
 любая новая игра стартует в Angler's Reef. Конфликтует с NewMissionTest (те же файлы). С CheatMenu совместим (хуки
 ложатся и на новые миссии; предупреждение загрузчика «discarding changes» тут ложное — правки объединяются).
-v1/v2 в игре сломались (см. грабли выше), **v3 (свой вечный квест на каждый) в игре не проверена.** Проверить: старт в баре без сюжетных диалогов; диалог q1 на карте; видна только миссия 1;
-после неё — диалог q2 и появляется миссия 2 (и т.д.); реплика финала в 3-й миссии (`TacticsScript`); диалог и
-500 монет после; не ломаются ли бар/конец дня/кордоны без сюжетных квестов.
+v1/v2 в игре сломались (см. грабли выше). **v3 проверена в игре (2026-11-22): кампания проходится целиком.**
+Недочёты v3 при старте в оригинальном баре B: подсказка «закончить день» (источник не найден) и после конца дня
+катсцена `trophy_scuttles` (её фильтр — `QuestCompleted hub_a_exhastion_popup1_hidden` из стартового набора).
+
+**v4 — своё начало** (`CAMPAIGN["start"]`), **в игре не проверено**:
+- Бар = миссия с `IsBar` (шаблон `west_caribbea_bar`) + уровень `.le`. Копия `Patchsets/west_caribbea_a_bar.le` →
+  `Patchsets/mod_camp_bar.le` (новые `Name`/`FileName`/`GuidIdentifier`); бармен `bartender_wc_a` и NPC
+  `old_man_npc` заменены на свои сущности (в уровне NPC = `CustomEntity` с `<Name>` и `<Definition>`; иногда слот
+  `NPCDefinition`). На карте: `wm_hub` (`gid 3`, `BarMission`) + точка старта `wm_start` (`gid 10`, имя → outset
+  `ShipStartPosition`). Картинка бара на карте — `WorldMapEntity` (`WM_BAR`; у всех карибских баров одна текстура).
+- NPC = сущность в `entities.npc.xml` (`NPC_BASE`/`BARTENDER_BASE`, модель `SkinnedCharacter`), её разговор —
+  `Actor/Conversation`; имя говорящего — строка `speaker_<имя сущности>`; `Speaker=` в диалоге = имя сущности в уровне.
+  Бармен: `ConversationCannotEndDayFallback`; конец дня в диалоге — `<Case If="can_end_day">` + `<EndDay/>`.
+- Диалоги умеют `Ask`/`Options/Item` (+`IfQuestLocked`/`IfQuestComplete`), `Case If="answer:N|first_time|
+  quest_complete:X|can_end_day"`, `Jump TargetLabel`, `SpeakTo`, `IsAdvertised`, `QuestObjective`, `EndDay`.
+- Вступление: катсцена `intermission_cutscenes.xml` (`Mission` = наш бар, `Trigger EnterRoamingMission`,
+  `Filter QuestActive mod_camp_intro`, `StartingBannerTextId`) + Lua `Run()`; запасной вариант — тот же разговор
+  из `OnMissionStart` скрипта бара (если катсцена не сработает при старте новой игры). Скрытый квест
+  `mod_camp_intro` → `mod_camp_q1` (его `OnUnlocked MapScript="ModCampSetHome"` → `SetHomeBar` в `worldmap.lua`).
+- Стартовый набор: `Mission`/`ShipStartPosition` → наш бар; генератор помечает просмотренными все оригинальные
+  катсцены, чьи фильтры проходят при старте (`cutscenes_playable_at_start`: сейчас только `trophy_scuttles`).
+v4 проверена в игре (2026-11-22): бар, NPC и вступление работают, но капитан стоял у входа (новая игра в баре
+ставит игрока на вход). v5: перед разговором `SetEntityPosition(captain, позиция NPC + (480,0), true)` +
+`SnapActorToGround` + `SetEntityDirection` (в катсцене — в `Init()`, до появления картинки) = точка
+`cutscene_captain` уровня. Подсказка «пора поспать» осталась — источник не найден (ждём текст/скриншот).
+Проверить: старт в «Ржавом якоре», баннер + вступление (катсцена или запасной вариант — какой сработал?), диалоги
+Болта (конец дня) и Шёпота (варианты ответа, реплики меняются по ходу кампании), после выхода — диалог q1, нет
+катсцены после конца дня, «домашний» бар = наш (куда возвращает после конца дня/поражения).
 
 Дальше: (2) свой спаун/диалог; (3) новый регион (полигон + `worldmap_regions.xml` + условие открытия);
 (4) визуальный редактор раскладки комнат (нужен рендер комнат из `.le` — превью/контуры порталов).

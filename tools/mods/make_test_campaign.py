@@ -41,6 +41,18 @@ CAMPAIGN = {
          "objective": ("kill_named_enemy", "navy_leader_1"), "loot": "crossbow_03_rare"},
     ],
     "end_reward": [("loot_money", 500)],
+    # Own start: a new bar (level copied from an original bar, its NPCs swapped for ours), an intro scene on the first
+    # visit, new games start there and it becomes the home bar.
+    "start": {
+        "bar": "mod_camp_bar", "clone": "west_caribbea_a_bar", "shift": (-4, -4),
+        "bartender": ("mod_camp_bartender", "bartender_wc_a"),  # (our entity, entity it replaces in the copied level)
+        "npc": ("mod_camp_informant", "old_man_npc"),
+        "intro": [  # (speaker, string key) — speakers must stand in the bar level (or be the captain)
+            ("mod_camp_bartender", "mod_camp_intro_1"), ("captain", "mod_camp_intro_2"),
+            ("mod_camp_informant", "mod_camp_intro_3"), ("captain", "mod_camp_intro_4"),
+            ("mod_camp_informant", "mod_camp_intro_5"), ("mod_camp_bartender", "mod_camp_intro_6"),
+        ],
+    },
 }
 
 LOC = {
@@ -68,6 +80,29 @@ LOC = {
         "mod_camp_con_q3": "The boss is hiding on a freighter. Last job, crew!",
         "mod_camp_con_finale": "That's the boss done. The test campaign is complete!",
         "mod_camp_con_end": "Campaign complete. Thanks for playing the test campaign!",
+        "mission_mod_camp_bar": "The Rusty Anchor",
+        "speaker_mod_camp_bartender": "Bolt",
+        "speaker_mod_camp_informant": "Whisper",
+        "mod_camp_banner": "The Rusty Anchor, Angler's Reef",
+        "mod_camp_intro_1": "Welcome to the Rusty Anchor, Captain. Not many subs dock here these days.",
+        "mod_camp_intro_2": "We're looking for work. The kind that pays.",
+        "mod_camp_intro_3": "Then you're in luck. Smugglers have been running cargo right under the navy's nose.",
+        "mod_camp_intro_4": "And where do we start?",
+        "mod_camp_intro_5": "A navy courier carries their map. Take it, and the rest will follow.",
+        "mod_camp_intro_6": "Rest here whenever you need. Good hunting, Captain.",
+        "mod_camp_bartender_hello": "Back again, Captain? What'll it be?",
+        "mod_camp_bartender_rest": "Let's call it a day.",
+        "mod_camp_bartender_tired": "You look fine to me. Go make some money first!",
+        "mod_camp_inf_hello": "Psst. Captain. Over here.",
+        "mod_camp_inf_ask": "What do you want to know?",
+        "mod_camp_inf_opt_who": "Who are you?",
+        "mod_camp_inf_opt_job": "Any news about the smugglers?",
+        "mod_camp_inf_opt_bye": "Nothing, thanks.",
+        "mod_camp_inf_who": "Names are bad for business. Call me Whisper.",
+        "mod_camp_inf_job_1": "Find the courier first. The map will tell you the rest.",
+        "mod_camp_inf_job_2": "Their boss hides on a freighter. Don't let him get away.",
+        "mod_camp_inf_job_3": "The smugglers are done. You've made a lot of friends here, Captain.",
+        "mod_camp_inf_bye": "Stay quiet out there.",
     },
     "ru": {
         "mission_mod_camp_01": "[МОД] Первый след",
@@ -93,6 +128,29 @@ LOC = {
         "mod_camp_con_q3": "Главарь прячется на грузовом судне. Последнее дело, команда!",
         "mod_camp_con_finale": "С главарём покончено. Тестовая кампания пройдена!",
         "mod_camp_con_end": "Кампания пройдена. Спасибо, что сыграли в тестовую кампанию!",
+        "mission_mod_camp_bar": "Ржавый якорь",
+        "speaker_mod_camp_bartender": "Болт",
+        "speaker_mod_camp_informant": "Шёпот",
+        "mod_camp_banner": "«Ржавый якорь», Риф Рыболова",
+        "mod_camp_intro_1": "Добро пожаловать в «Ржавый якорь», капитан. Нынче к нам редко кто заходит.",
+        "mod_camp_intro_2": "Мы ищем работу. Такую, за которую хорошо платят.",
+        "mod_camp_intro_3": "Тогда вам повезло. Контрабандисты возят грузы прямо под носом у флота.",
+        "mod_camp_intro_4": "И с чего начать?",
+        "mod_camp_intro_5": "У курьера флота есть их карта. Заберите её, а дальше всё само пойдёт.",
+        "mod_camp_intro_6": "Отдыхайте здесь, когда нужно. Удачной охоты, капитан.",
+        "mod_camp_bartender_hello": "Снова вы, капитан? Чем помочь?",
+        "mod_camp_bartender_rest": "Пожалуй, на сегодня хватит.",
+        "mod_camp_bartender_tired": "Вы ещё бодры. Сначала заработайте!",
+        "mod_camp_inf_hello": "Псст. Капитан. Сюда.",
+        "mod_camp_inf_ask": "Что хотите узнать?",
+        "mod_camp_inf_opt_who": "Кто ты такой?",
+        "mod_camp_inf_opt_job": "Что слышно о контрабандистах?",
+        "mod_camp_inf_opt_bye": "Ничего, спасибо.",
+        "mod_camp_inf_who": "Имена вредят делу. Зовите меня Шёпот.",
+        "mod_camp_inf_job_1": "Сначала найдите курьера. Карта подскажет остальное.",
+        "mod_camp_inf_job_2": "Их главарь прячется на грузовом судне. Не дайте ему уйти.",
+        "mod_camp_inf_job_3": "С контрабандистами покончено. У вас тут теперь много друзей, капитан.",
+        "mod_camp_inf_bye": "Не шумите там.",
     },
 }
 
@@ -163,12 +221,15 @@ def check_unlock_order(text):
 
 def quests_xml(c, nl):
     ms = c["missions"]
-    out = []
+    # hidden intro quest: completed by the intro scene in our bar; the first quest waits for it
+    out = ['\t<Quest Name="mod_camp_intro" Template="BASE">\n\t\t<Objectives>\n\t\t\t<Objective>\n\t\t\t\t<Condition>none</Condition>\n'
+           '\t\t\t</Objective>\n\t\t</Objectives>\n\t</Quest>\n']
     for i, m in enumerate(ms):
         q = quest_name(i)
-        unlock = f"\t\t<UnlockedBy>{quest_name(i - 1)}</UnlockedBy>\n" if i else ""
+        unlock = f"\t\t<UnlockedBy>{quest_name(i - 1) if i else 'mod_camp_intro'}</UnlockedBy>\n"
+        home = ' MapScript="ModCampSetHome"' if i == 0 else ""
         done = ' TacticsScript="ModCampaignFinale"' if i == len(ms) - 1 else ""
-        out.append(f'\t<Quest Name="{q}" Template="BASE">\n{unlock}\t\t<OnUnlocked MapConversation="con_mod_camp_q{i + 1}" />\n'
+        out.append(f'\t<Quest Name="{q}" Template="BASE">\n{unlock}\t\t<OnUnlocked MapConversation="con_mod_camp_q{i + 1}"{home} />\n'
                    + (f'\t\t<OnCompleted{done} />\n' if done else "")
                    + f'\t\t<Objectives>\n\t\t\t<Objective>\n\t\t\t\t<LocalizedStringId>quest_{q}_obj</LocalizedStringId>\n'
                    f'\t\t\t\t<Condition>mission</Condition>\n\t\t\t\t<Parameter>{m["name"]}</Parameter>\n'
@@ -191,6 +252,215 @@ def conversations_xml(c, nl):
         out.append(f'\t<Conversation Name="con_mod_camp_{n}">\n\t\t<Speak Speaker="{c["speaker"]}" Text="mod_camp_con_{n}" '
                    f'Id="mdc{k:03d}" />\n\t</Conversation>\n')
     return "".join(out).replace("\n", nl)
+
+
+def clone_bar(text, s):
+    src = re.search(rf'\t<Mission Name="{s["clone"]}".*?</Mission>\r?\n', text, re.S)
+    block = src.group(0)
+    for g in set(re.findall(GUID, block)):
+        block = block.replace(g, str(uuid.uuid4()))
+    block = block.replace(f'Name="{s["clone"]}"', f'Name="{s["bar"]}"', 1)
+    block, n1 = re.subn(r"<Patchset>[^<]*</Patchset>", f"<Patchset>Patchsets/{s['bar']}</Patchset>", block)
+    block, n2 = re.subn(r"<Script>[^<]*</Script>", f"<Script>Lua\\\\Missions\\\\{s['bar']}.lua</Script>", block)
+    assert n1 == n2 == 1
+    return src.end(), block
+
+
+def clone_level(le, s):
+    """Copy of the original bar level: own name/GUID, the original bartender and NPC replaced by ours."""
+    le = le.replace(f"<Name>{s['clone']}</Name>", f"<Name>{s['bar']}</Name>", 1)
+    le = le.replace(f"<FileName>{s['clone']}.le</FileName>", f"<FileName>{s['bar']}.le</FileName>", 1)
+    le = re.sub(r"<GuidIdentifier>[^<]*</GuidIdentifier>", f"<GuidIdentifier>{uuid.uuid4()}</GuidIdentifier>", le, count=1)
+    for new, old in (s["bartender"], s["npc"]):
+        for tag in ("Name", "Definition"):
+            le, n = re.subn(rf"<{tag}>{old}</{tag}>", f"<{tag}>{new}</{tag}>", le)
+            assert n == 1, f"{old}: {n} <{tag}> in the level"
+    return le
+
+
+def npc_entities(ents, s, nl):
+    """Our bartender/NPC: copies of the replaced entities (same model) talking with our conversations."""
+    out = []
+    for new, old in (s["bartender"], s["npc"]):
+        b = re.search(rf'\t<Entity Name="{old}".*?</Entity>', ents, re.S).group(0)
+        b = b.replace(f'Name="{old}"', f'Name="{new}"', 1)
+        b, n = re.subn(r"<Conversation>[^<]*</Conversation>", f"<Conversation>{new}</Conversation>", b)
+        assert n == 1, old
+        b = re.sub(r"<ConversationCannotEndDayFallback>[^<]*</ConversationCannotEndDayFallback>",
+                   f"<ConversationCannotEndDayFallback>{new}</ConversationCannotEndDayFallback>", b)
+        out.append(b.replace("\r\n", "\n").replace("\n", nl) + nl + nl)
+    return "".join(out)
+
+
+def start_conversations_xml(c, nl):
+    s = c["start"]
+    bt, inf = s["bartender"][0], s["npc"][0]
+    ids = (f"mds{k:03d}" for k in range(1000))
+    sp = lambda who, key, extra="": f'<Speak Speaker="{who}" Text="{key}"{extra} Id="{next(ids)}" />'
+    intro = "".join(f"\t\t{sp(w, k)}\n" for w, k in s["intro"])
+    q = [quest_name(i) for i in range(len(c["missions"]))]
+    x = f'''	<Conversation Name="con_mod_camp_intro">
+{intro}	</Conversation>
+	<Conversation Name="{bt}">
+		<Ask Label="questions" Speaker="{bt}" Text="mod_camp_bartender_hello" Cancelable="True" Id="{next(ids)}">
+			<Options>
+				<Item Text="dialogue_option_end_day" AlwaysEmphasized="True" />
+				<Item Text="dialogue_option_farewell" AlwaysEmphasized="True" />
+			</Options>
+		</Ask>
+		<Case If="answer:0" Id="{next(ids)}">
+			<Children>
+				<Case If="can_end_day" Id="{next(ids)}">
+					<Children>
+						{sp("captain", "mod_camp_bartender_rest", f' SpeakTo="{bt}"')}
+						<Jump TargetConversation="{bt}" TargetLabel="end_day" Id="{next(ids)}" />
+					</Children>
+				</Case>
+				{sp(bt, "mod_camp_bartender_tired")}
+				<Jump TargetConversation="{bt}" TargetLabel="bar_end" Id="{next(ids)}" />
+			</Children>
+		</Case>
+		<Case Id="{next(ids)}">
+			<Children>
+				<Jump TargetConversation="{bt}" TargetLabel="bar_end" Id="{next(ids)}" />
+			</Children>
+		</Case>
+		<EndDay Label="end_day" Id="{next(ids)}" />
+		<Wait Label="bar_end" Id="{next(ids)}" />
+	</Conversation>
+	<Conversation Name="{inf}">
+		<Case If="first_time" Id="{next(ids)}">
+			<Children>
+				{sp(inf, "mod_camp_inf_hello", ' SpeakTo="captain" IsAdvertised="True"')}
+			</Children>
+		</Case>
+		<Ask Label="ask" Speaker="{inf}" Text="mod_camp_inf_ask" Cancelable="True" Id="{next(ids)}">
+			<Options>
+				<Item Text="mod_camp_inf_opt_who" />
+				<Item Text="mod_camp_inf_opt_job" />
+				<Item Text="mod_camp_inf_opt_bye" AlwaysEmphasized="True" />
+			</Options>
+		</Ask>
+		<Case If="answer:0" Id="{next(ids)}">
+			<Children>
+				{sp(inf, "mod_camp_inf_who", ' SpeakTo="captain"')}
+				<Jump TargetConversation="{inf}" TargetLabel="ask" Id="{next(ids)}" />
+			</Children>
+		</Case>
+		<Case If="answer:1" Id="{next(ids)}">
+			<Children>
+				<Case If="quest_complete:{q[-1]}" Id="{next(ids)}">
+					<Children>
+						{sp(inf, "mod_camp_inf_job_3", ' SpeakTo="captain"')}
+						<Jump TargetConversation="{inf}" TargetLabel="ask" Id="{next(ids)}" />
+					</Children>
+				</Case>
+				<Case If="quest_complete:{q[0]}" Id="{next(ids)}">
+					<Children>
+						{sp(inf, "mod_camp_inf_job_2", ' SpeakTo="captain"')}
+						<Jump TargetConversation="{inf}" TargetLabel="ask" Id="{next(ids)}" />
+					</Children>
+				</Case>
+				{sp(inf, "mod_camp_inf_job_1", ' SpeakTo="captain"')}
+				<Jump TargetConversation="{inf}" TargetLabel="ask" Id="{next(ids)}" />
+			</Children>
+		</Case>
+		<Case Id="{next(ids)}">
+			<Children>
+				{sp(inf, "mod_camp_inf_bye")}
+			</Children>
+		</Case>
+	</Conversation>
+'''
+    return x.replace("\n", nl)
+
+
+def intro_cutscene_xml(c, nl):
+    bar = c["start"]["bar"]
+    return f'''	<IntermissionCutscene Name="mod_camp_intro" Template="base">
+		<Mission>{bar}</Mission>
+		<ScriptFile>Lua/Intermissions/mod_camp_intro.lua</ScriptFile>
+		<NextMission>{bar}</NextMission>
+		<Priority>10</Priority>
+		<Trigger Type="EnterRoamingMission" Value="{bar}"/>
+		<Filters>
+			<Filter Type="QuestActive" Value="mod_camp_intro"/>
+		</Filters>
+		<StartingBannerTextId>mod_camp_banner</StartingBannerTextId>
+	</IntermissionCutscene>
+'''.replace("\n", nl)
+
+
+# The captain enters at the bar door; for the intro he is moved next to the NPCs (the copied level's
+# cutscene_captain spot: between the NPC at x-480 and the bartender), same calls as the original cutscenes.
+PLACE_CAPTAIN_LUA = '''
+function ModCampPlaceCaptain()
+	local captain = FindEntityWithName("captain")
+	local npc = FindEntityWithName("%(npc)s")
+	if captain and npc then
+		local p = GetEntityPosition(npc)
+		SetEntityPosition(captain, Vector(p.x + 480, p.y), true)
+		SnapActorToGround(captain)
+		SetEntityDirection(captain, Vector.Left)
+	end
+end
+'''
+
+INTRO_LUA = '''-- TestCampaign intro scene (intermission_cutscenes.xml: mod_camp_intro), tools/mods/make_test_campaign.py
+%(place)s
+-- runs before the fade-in
+function Init()
+	ModCampPlaceCaptain()
+end
+
+function Run()
+	Wait(1.0)
+	StartConversation("con_mod_camp_intro")
+	CompleteQuest("mod_camp_intro")
+end
+'''
+
+# Fallback in case the cutscene does not trigger when a new game starts inside the bar.
+BAR_LUA = '''-- TestCampaign bar, tools/mods/make_test_campaign.py
+%(place)s
+function OnMissionStart()
+	if IsQuestActive("mod_camp_intro") then
+		ModCampPlaceCaptain()
+		StartConversation("con_mod_camp_intro")
+		CompleteQuest("mod_camp_intro")
+	end
+end
+'''
+
+WORLDMAP_LUA = '''
+
+-- TestCampaign (tools/mods/make_test_campaign.py): our bar is the home bar. Run by quest mod_camp_q1 OnUnlocked.
+function ModCampSetHome()
+	SetHomeBar("%s", false, true)
+end
+'''
+
+
+def cutscenes_playable_at_start(ic, outset):
+    """Original intermission cutscenes whose filters already pass at the start (only quests in the outset are
+    completed, original quests never become active) -> they would play out of context. Unknown filter types count as
+    passing, so the list errs on the side of blocking."""
+    done = set(re.findall(r"<Quest>(\w+)</Quest>", outset))
+    cut_done = set(re.findall(r"<Cutscene>(\w+)</Cutscene>", outset))
+    mis_done = set(re.findall(r"<Mission>(\w+)</Mission>", outset))
+    out = []
+    for m in re.finditer(r'<IntermissionCutscene Name="(\w+)"([^>]*)>(.*?)</IntermissionCutscene>', ic, re.S):
+        if "Abstract" in m.group(2) or m.group(1) in cut_done:
+            continue
+        ok = True
+        for f in re.findall(r"<Filter [^>]*>", m.group(3)):
+            t = re.search(r'Type="(\w+)"', f).group(1)
+            v = (re.search(r'Value="([^"]*)"', f) or [None, ""])[1]
+            ok &= {"QuestCompleted": v in done, "QuestActive": False, "CutscenePlayed": v in cut_done,
+                   "CutsceneNotPlayed": v not in cut_done, "MissionCompleted": v in mis_done}.get(t, True)
+        if ok:
+            out.append(m.group(1))
+    return out
 
 
 def surface_open(tmx, x, y, r=1):
@@ -246,6 +516,44 @@ def main():
     for m in ms:
         end, block = clone_mission(text, m)
         text = text[:end] + block + text[end:]
+    s = c["start"]
+    end, block = clone_bar(text, s)
+    text = text[:end] + block + text[end:]
+    write(rel, bom + text.encode())
+
+    # 1b. our bar: level copy, NPC entities, scripts, intro cutscene
+    le, bom = read(f"Patchsets/{s['clone']}.le")
+    write(f"Patchsets/{s['bar']}.le", bom + clone_level(le, s).encode())
+    place = PLACE_CAPTAIN_LUA % {"npc": s["npc"][0]}
+    write(f"Lua/Missions/{s['bar']}.lua", (BAR_LUA % {"place": place}).replace("\n", "\r\n").encode())
+    write("Lua/Intermissions/mod_camp_intro.lua", (INTRO_LUA % {"place": place}).replace("\n", "\r\n").encode())
+
+    rel = "Definitions/entities.npc.xml"
+    text, bom = read(rel)
+    text = insert_before_close(text, lambda nl: npc_entities(text, s, nl))
+    write(rel, bom + text.encode())
+
+    rel = "Definitions/intermission_cutscenes.xml"
+    text, bom = read(rel)
+    ic_text = text
+    text = insert_before_close(text, lambda nl: intro_cutscene_xml(c, nl))
+    write(rel, bom + text.encode())
+
+    rel = "Lua/WorldMap/worldmap.lua"
+    text, bom = read(rel)
+    write(rel, bom + (text.rstrip() + WORLDMAP_LUA % s["bar"]).replace("\r\n", "\n").replace("\n", "\r\n").encode())
+
+    # new games start in our bar; original cutscenes that could already play are marked as seen
+    rel = "Definitions/outsets.xml"
+    text, bom = read(rel)
+    om = re.search(r'<Outset Name="new_game_skip_tutorial".*?</Outset>', text, re.S)
+    outset = om.group(0)
+    blocked = cutscenes_playable_at_start(ic_text, outset)
+    outset = re.sub(r"<ShipStartPosition>[^<]*</ShipStartPosition>", f"<ShipStartPosition>{s['bar']}_start</ShipStartPosition>", outset, count=1)
+    outset = re.sub(r"<Mission>[^<]*</Mission>", f"<Mission>{s['bar']}</Mission>", outset, count=1)  # first = start mission
+    outset, n = re.subn(r"(<CompletedCutscenes>)", r"\1" + "".join(f"\r\n\t\t\t<Cutscene>{b}</Cutscene>" for b in blocked), outset, count=1)
+    assert n == 1
+    text = text[:om.start()] + outset + text[om.end():]
     write(rel, bom + text.encode())
 
     rel = "Definitions/mission_rules.de"
@@ -281,7 +589,7 @@ def main():
 
     rel = "Definitions/conversations.xml"
     text, bom = read(rel)
-    text = insert_before_close(text, lambda nl: conversations_xml(c, nl))
+    text = insert_before_close(text, lambda nl: conversations_xml(c, nl) + start_conversations_xml(c, nl))
     write(rel, bom + text.encode())
 
     # 3. every new game starts at Angler's Reef
@@ -322,8 +630,19 @@ def main():
         hide = '     <property name="Hide If Locked By Quest" type="bool" value="true"/>\r\n' if i else ""
         new.append(f'   <object id="{oid + i}" name="{m["name"]}" gid="5" x="{x:g}" y="{y:g}" width="170" height="167">\r\n'
                    f'    <properties>\r\n{hide}     <property name="Mission" value="{m["name"]}"/>\r\n    </properties>\r\n   </object>\r\n')
+    # our bar (hub icon) and the new-game ship start point at the same spot, like the original bars
+    x = float(am.group(1)) + s["shift"][0] * TILE
+    y = float(am.group(2)) + s["shift"][1] * TILE
+    assert in_region(text, c["region"], x, y), f"{s['bar']}: outside {c['region']}"
+    assert surface_open(text, x, y), f"{s['bar']}: not open water"
+    for ix, iy in icons:
+        assert abs(ix - x) + abs(iy - y) >= 2 * TILE, f"{s['bar']}: too close to the icon at {ix:g},{iy:g}"
+    k = oid + len(ms)
+    new.append(f'   <object id="{k}" name="{s["bar"].upper()}" gid="3" x="{x:g}" y="{y:g}" width="170" height="167">\r\n'
+               f'    <properties>\r\n     <property name="BarMission" value="{s["bar"]}"/>\r\n    </properties>\r\n   </object>\r\n'
+               f'   <object id="{k + 1}" name="{s["bar"]}_start" gid="10" x="{x:g}" y="{y:g}" width="170" height="167"/>\r\n')
     text = text[:am.end()] + "".join(new) + text[am.end():]
-    text = re.sub(r'nextobjectid="\d+"', f'nextobjectid="{oid + len(ms)}"', text, count=1)
+    text = re.sub(r'nextobjectid="\d+"', f'nextobjectid="{k + 2}"', text, count=1)
     write(rel, bom + text.encode())
 
     # 5. strings
