@@ -101,6 +101,54 @@ public sealed class RandomizerOptions
     public Mode EnvironmentMode { get; set; } = Mode.Balanced;
     public bool ShuffleNames { get; set; }
     public Mode NameMode { get; set; } = Mode.Balanced;
+    public bool ShuffleSounds { get; set; }
+    public Mode SoundMode { get; set; } = Mode.Balanced;
+    public bool ShuffleEffects { get; set; }
+    public Mode EffectMode { get; set; } = Mode.Balanced;
+    public bool ShuffleVoices { get; set; }
+    public Mode VoiceMode { get; set; } = Mode.Balanced;
+    public bool MysteryItems { get; set; }
+
+    // Battles.
+    public bool ShuffleEnemyWeapons { get; set; }
+    public Mode EnemyWeaponMode { get; set; } = Mode.Balanced;
+    public bool ShuffleEnemyAi { get; set; }
+    public Mode EnemyAiMode { get; set; } = Mode.Balanced;
+    public bool ExplosiveCover { get; set; }
+    public Mode CoverMode { get; set; } = Mode.Balanced;
+    public bool MutatorRoulette { get; set; }
+    public Mode MutatorMode { get; set; } = Mode.Balanced;
+    public bool ChaosEvents { get; set; }
+    public int ChaosEventChance { get; set; } = 25;
+    public bool GoldenEnemy { get; set; }
+    public Mode GoldenMode { get; set; } = Mode.Balanced;
+    public bool RegionEdicts { get; set; }
+    public Mode EdictMode { get; set; } = Mode.Balanced;
+    /// <summary>Any option that needs the Lua mission hooks (<see cref="MissionChaos"/>).</summary>
+    public bool MissionHooks => MutatorRoulette || ChaosEvents || GoldenEnemy || RegionEdicts;
+
+    // Crew, start and sub.
+    public bool ShuffleCrewJobs { get; set; }
+    public Mode CrewJobMode { get; set; } = Mode.Balanced;
+    public bool ShufflePersonal { get; set; }
+    public Mode PersonalMode { get; set; } = Mode.Balanced;
+    public bool RandomStart { get; set; }
+    public Mode StartMode { get; set; } = Mode.Balanced;
+    public bool ShuffleSubWeapons { get; set; }
+    public Mode SubMode { get; set; } = Mode.Balanced;
+    public bool ShuffleSubCosts { get; set; }
+    public bool RandomizeLootDecks { get; set; }
+    public Mode LootDeckMode { get; set; } = Mode.Balanced;
+
+    // World map.
+    public bool ShuffleWhirlpools { get; set; }
+    public Mode WhirlpoolMode { get; set; } = Mode.Balanced;
+    public bool ShuffleMapChests { get; set; }
+    public Mode ChestMode { get; set; } = Mode.Balanced;
+    public bool ShuffleMapPatrols { get; set; }
+    public Mode PatrolMode { get; set; } = Mode.Balanced;
+    public bool ShuffleMapHazards { get; set; }
+    public Mode HazardMode { get; set; } = Mode.Balanced;
 
     static Mode ModeOf(ModSettings s, string id) => s.String(id) == "chaos" ? Mode.Chaos : Mode.Balanced;
 
@@ -149,6 +197,46 @@ public sealed class RandomizerOptions
         EnvironmentMode = ModeOf(s, "environmentMode"),
         ShuffleNames = s.Bool("names"),
         NameMode = ModeOf(s, "nameMode"),
+        ShuffleSounds = s.Bool("sounds"),
+        SoundMode = ModeOf(s, "soundMode"),
+        ShuffleEffects = s.Bool("effects"),
+        EffectMode = ModeOf(s, "effectMode"),
+        ShuffleVoices = s.Bool("voices"),
+        VoiceMode = ModeOf(s, "voiceMode"),
+        MysteryItems = s.Bool("mystery"),
+        ShuffleEnemyWeapons = s.Bool("enemyWeapons"),
+        EnemyWeaponMode = ModeOf(s, "enemyWeaponMode"),
+        ShuffleEnemyAi = s.Bool("enemyAi"),
+        EnemyAiMode = ModeOf(s, "enemyAiMode"),
+        ExplosiveCover = s.Bool("explosiveCover"),
+        CoverMode = ModeOf(s, "coverMode"),
+        MutatorRoulette = s.Bool("mutators"),
+        MutatorMode = ModeOf(s, "mutatorMode"),
+        ChaosEvents = s.Bool("chaosEvents"),
+        ChaosEventChance = s.Int("chaosEventPct"),
+        GoldenEnemy = s.Bool("golden"),
+        GoldenMode = ModeOf(s, "goldenMode"),
+        RegionEdicts = s.Bool("regionEdicts"),
+        EdictMode = ModeOf(s, "edictMode"),
+        ShuffleCrewJobs = s.Bool("crewJobs"),
+        CrewJobMode = ModeOf(s, "crewJobMode"),
+        ShufflePersonal = s.Bool("personal"),
+        PersonalMode = ModeOf(s, "personalMode"),
+        RandomStart = s.Bool("start"),
+        StartMode = ModeOf(s, "startMode"),
+        ShuffleSubWeapons = s.Bool("subWeapons"),
+        SubMode = ModeOf(s, "subMode"),
+        ShuffleSubCosts = s.Bool("subCosts"),
+        RandomizeLootDecks = s.Bool("lootDecks"),
+        LootDeckMode = ModeOf(s, "lootDeckMode"),
+        ShuffleWhirlpools = s.Bool("whirlpools"),
+        WhirlpoolMode = ModeOf(s, "whirlpoolMode"),
+        ShuffleMapChests = s.Bool("mapChests"),
+        ChestMode = ModeOf(s, "chestMode"),
+        ShuffleMapPatrols = s.Bool("mapPatrols"),
+        PatrolMode = ModeOf(s, "patrolMode"),
+        ShuffleMapHazards = s.Bool("mapHazards"),
+        HazardMode = ModeOf(s, "hazardMode"),
     };
 
     static string Lower(Mode m) => m.ToString().ToLowerInvariant();
@@ -178,6 +266,27 @@ public sealed class RandomizerOptions
         if (ShuffleMusic) parts.Add("music");
         if (ShuffleEnvironments) parts.Add($"environments:{Lower(EnvironmentMode)}");
         if (ShuffleNames) parts.Add($"names:{Lower(NameMode)}");
+        if (ShuffleSounds) parts.Add($"sounds:{Lower(SoundMode)}");
+        if (ShuffleEffects) parts.Add($"effects:{Lower(EffectMode)}");
+        if (ShuffleVoices) parts.Add($"voices:{Lower(VoiceMode)}");
+        if (MysteryItems) parts.Add("mystery");
+        if (ShuffleEnemyWeapons) parts.Add($"enemyweapons:{Lower(EnemyWeaponMode)}");
+        if (ShuffleEnemyAi) parts.Add($"enemyai:{Lower(EnemyAiMode)}");
+        if (ExplosiveCover) parts.Add($"cover:{Lower(CoverMode)}");
+        if (MutatorRoulette) parts.Add($"mutators:{Lower(MutatorMode)}");
+        if (ChaosEvents) parts.Add($"events{ChaosEventChance}%");
+        if (GoldenEnemy) parts.Add($"golden:{Lower(GoldenMode)}");
+        if (RegionEdicts) parts.Add($"edicts:{Lower(EdictMode)}");
+        if (ShuffleCrewJobs) parts.Add($"jobs:{Lower(CrewJobMode)}");
+        if (ShufflePersonal) parts.Add($"personal:{Lower(PersonalMode)}");
+        if (RandomStart) parts.Add($"start:{Lower(StartMode)}");
+        if (ShuffleSubWeapons) parts.Add($"sub:{Lower(SubMode)}");
+        if (ShuffleSubCosts) parts.Add("subcosts");
+        if (RandomizeLootDecks) parts.Add($"lootdecks:{Lower(LootDeckMode)}");
+        if (ShuffleWhirlpools) parts.Add($"whirlpools:{Lower(WhirlpoolMode)}");
+        if (ShuffleMapChests) parts.Add($"maploot:{Lower(ChestMode)}");
+        if (ShuffleMapPatrols) parts.Add($"patrols:{Lower(PatrolMode)}");
+        if (ShuffleMapHazards) parts.Add($"hazards:{Lower(HazardMode)}");
         return $"seed {Seed} ({string.Join(", ", parts)})";
     }
 }

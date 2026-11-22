@@ -44,7 +44,7 @@ public static class EnemyShuffle
     const double MaxCostFactor = 3;
 
     /// <summary>Never used as a replacement and never replaced: mimic forms, bosses, mission-specific variants.</summary>
-    static readonly Regex Special = new(@"mimic|kraken|boss|prison_break|keyholder|medal|big_steve|tutorial|fancy|heist|_(west|east)_caribbea_\d|_[we]c\d", RegexOptions.IgnoreCase);
+    internal static readonly Regex Special = new(@"mimic|kraken|boss|prison_break|keyholder|medal|big_steve|tutorial|fancy|heist|_(west|east)_caribbea_\d|_[we]c\d", RegexOptions.IgnoreCase);
 
     /// <summary>Promotions (what mimics turn into) and the scripted tutorial stay vanilla.</summary>
     static readonly Regex SkippedTable = new(@"^promotions|tutorial", RegexOptions.IgnoreCase);
@@ -186,7 +186,7 @@ public static class EnemyShuffle
     /// Enemies that missions check by definition name (Lua "== \"enemy_x\"", objectives in mission_rules.de, e.g.
     /// "kill all walking bombs"). Replacing them in spawn tables would break those missions, so they stay.
     /// </summary>
-    static HashSet<string> WatchedByScripts(GameContent c)
+    internal static HashSet<string> WatchedByScripts(GameContent c)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var lua in c.OriginalFiles.Where(f => f.EndsWith(".lua", StringComparison.OrdinalIgnoreCase)))
@@ -198,7 +198,7 @@ public static class EnemyShuffle
     }
 
     /// <summary>Definitions by name (with their file) and lookups through the Template chain.</summary>
-    sealed class Defs
+    internal sealed class Defs
     {
         // Case-sensitive: the game has both ENEMY_PIRATE_SWAB (abstract template) and enemy_pirate_swab.
         public readonly Dictionary<string, (XElement Element, XmlDoc Doc)> Map = new(StringComparer.Ordinal);
@@ -301,7 +301,7 @@ public static class EnemyShuffle
         a == null ? b : b == null ? a : a.Select((v, i) => Math.Max(v, b[i])).ToArray();
 
     /// <summary>"2,3,3,4" → one value per level (the last one repeated); null for formulas like "39+1*x".</summary>
-    static double[]? Values(string? text)
+    internal static double[]? Values(string? text)
     {
         if (text == null) return null;
         var parts = text.Split(',');

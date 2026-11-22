@@ -74,15 +74,9 @@ public sealed class MissionScripts
             else m.Add(new XElement("Script", $@"Lua\Missions\{GenericName}.lua"));
             GenericCount++;
         }
+        // None left when an earlier mod (the randomizer) already gave every procedural mission a script of its own.
+        if (GenericCount == 0) return;
         ctx.Content.WriteText(GenericPath, "-- SWH2 Challenges: shared script for procedural combat missions (they have none of their own).\r\n");
         ctx.Log($"Mission hooks: {GenericCount} procedural combat missions get the generic script.");
-    }
-
-    /// <summary>Appends a hook block to the generic script (it is not an original file, so LuaPatcher skips it).</summary>
-    public static void AppendToGeneric(ModContext ctx, string block)
-    {
-        if (!ctx.Content.Exists(GenericPath)) return;
-        ctx.Content.WriteText(GenericPath, ctx.Content.ReadText(GenericPath).TrimEnd() + "\r\n\r\n"
-            + block.Replace("\r\n", "\n").Replace("\n", "\r\n") + "\r\n");
     }
 }

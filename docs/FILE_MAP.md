@@ -258,6 +258,15 @@ SteamWorld Heist 2/
 | Освещение миссий | `missions*.de` → `Environment` (см. `environments.xml`) |
 | Названия | `Language/<lang>.csv` — меняются местами тексты ключей названий (`weapon_<имя>` / `LocalizedNameId` / имя предмета, `NameStringId` врагов) |
 | Цены | `weapons.xml`, `utilities.xml`, `ship_equipment.xml`, `hats.xml`, `special_items.xml`, `key_items.xml` |
+| Оружие / ИИ врагов | `entities.enemies*.xml` → `Actor/Weapon` / `Actor/AI` (боссы и «машины» не трогаются) |
+| Взрывные укрытия | `missions*.de` → `Placeholders/Placeholder@ReplaceWith` (`ph_explosive_cover*`, `ph_hanging_explosive`, `ph_cover_weak_low`, `ph_hanging_cover`) |
+| Звуки / эффекты / голоса | `weapons*.xml` (`ShootSound`, `AimSound`, `CancelAimSound`, `ReloadSound`, `ShootEffects/Effect@Name`), `HurtSound` / `DeathEffect` врагов и экипажа, `entities.projectiles.xml` (`ProjectileEffect`, `MuzzleEffect`, `EffectOnEnd`), `speakers.xml` (`Voice@Cue/Speed`, `Portrait`, `RadioPortrait`) |
+| Профессии / личные способности | `personas.xml` → `DefaultWeapon` (+ `outsets.xml` `Crew/Jobs/Job/JobName`), `PersonalUpgrade1/2`, `ReplacePersonalUpgrade` |
+| Случайный старт | `outsets.xml` → `new_game`, `new_game_skip_tutorial` (`Resources`, `Items`) |
+| Подлодка / колоды лута | `ship_equipment.xml` → `WeaponMounts/Mount@Weapon`, `entities.worldmap.xml` → `wm_enemy_*` `WeaponMounts`, `ship_upgrades.xml` → `CostFragments`; `loot_tables.xml` → `Entry@Count` |
+| Карта мира | `WorldMap.tmx` (только слои `Entities`): водовороты — свойство `Destination`; лут (`wm_loot`, `wm_loot_big`, `wm_loot_fragments`) — `x`/`y`; враги и мины (`wm_enemyspawn`, вид = тайл `gid` → `Entities.tsx` `EnemyDefinition`) и скалы (`wm_spike_rocks`) — `gid` + `width`/`height` (масштаб сохраняется). Слои — группы `0`..`9` (0 — поверхность, 6–9 — Atomic City); регион — полигон `Region` того же слоя; порядок регионов — по `outsets.xml` (`VisitedRegions`/`MissionRegion`). Бродячие спауны — `worldmap_spawns.xml` → `SpawnEntry@Name` |
+| Загадочные предметы | `Language/<lang>.csv` — имя, `_description`, `_flavor` оружия и утилит → `???` |
+| Хаос в миссиях (Lua) | `Lua/Mod/swh2_randomizer.lua` + хук в конце `Lua/Missions/*.lua`; процедурным боевым миссиям — `<Script>` `Lua/Missions/swh2_rnd_<миссия>.lua`; свои `modifiers.xml` (`swh2_mut_*`, `swh2_evt_*`, `swh2_golden`, `swh2_issue_*`), `edicts.xml` (`swh2_<эдикт>_<фракция>`), строки в `Language/<lang>_mod.csv`; регион миссии — полигон `Region` в `WorldMap.tmx`, где стоит её метка |
 | Челлендж «без гринда» | `quests.xml` (+2 скрытых квеста на миссию: `nogrind_won_*` → `nogrind_lock_*` с `LockMissions`), `worldmap_regions.xml` (`RespawnIfAchievedReputation`, лут `worldmap_ghost`), `worldmap_spawns.xml` (спауны `wm_loot`), `entities.worldmap.xml` (`LootEntity` кораблей) |
 
 Не перемещаются: ключевые предметы (`key_items.xml`), предметы, упомянутые в условиях квестов

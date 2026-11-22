@@ -40,12 +40,8 @@ end";
     {
         if (ctx.Lua.MissionScripts.Any(p => ctx.Content.ReadText(p).Contains(Marker)))
             throw new InvalidOperationException("Mission scripts already contain the quit-forfeits hook (built from a modded file?)");
+        // Covers the generic script and other scripts added by mods too.
         int n = ctx.Lua.AppendToMissionScripts(script => missions.Abortable.Contains(script) ? Hook : null);
-        if (missions.Abortable.Contains(MissionScripts.GenericName))
-        {
-            MissionScripts.AppendToGeneric(ctx, Hook);
-            n++;
-        }
 
         ctx.Report.Section("Quitting forfeits the mission");
         ctx.Report.Line($"{n} combat mission scripts: continuing a mission from a save returns you to the world map.");

@@ -1,10 +1,13 @@
 # Randomizer — SteamWorld Heist 2
 
-Requires **SWH2 Mod Loader** 1.0+.
+Requires **SWH2 Mod Loader** 1.1+.
 
 Shuffles missions on the world map, the game's fixed rewards (story key items too, with logic), shop stock, enemies,
 enemy hats, weapon stats and projectiles, utility and ability stats, class perks, crew stats, prices, and for fun: dialogue, battle barks, item
-and enemy names, music, mission lighting, weapon models, crew hats and NPC looks. The same seed and settings always
+and enemy names, music, mission lighting, weapon models, crew hats and NPC looks. New in 1.4: enemy guns and AI,
+explosive cover, a mutator roulette, chaos events, golden enemies, regional edicts, starting jobs, personal abilities,
+a random start, sub weapons and upgrade costs, loot decks, sounds, effects, voices, mystery items, and on the world
+map: whirlpools, floating loot, patrols and ambushes, hazards. The same seed and settings always
 produce the same game, so you can race or share seeds.
 
 Start a **new save** for the full experience (in an existing save only places you haven't visited change).
@@ -195,6 +198,62 @@ What player weapons shoot: lightning, lasers, fire, the banjo sniper's slow arci
 speed, range and arc along, so this does change how a weapon plays; damage stays with the weapon. Grenade throws and
 aim previews stay. **Balanced**: inside the weapon class; **Chaos**: any player projectile.
 
+### World map (on in both)
+The story timeline (the developers' debug start points in `outsets.xml`) tells when each region opens; it keeps all of
+this beatable.
+- **Whirlpools**: lead elsewhere — but only on the same depth, and only to a region the story opens no later than the
+  whirlpool's own region or its vanilla destination. Whirlpools between seas or depths (the way to Atomic City) and the
+  armada's stay. Balanced: inside the same sea. Chaos: across seas.
+- **World map loot**: coins, big chests and fragment caches swap places (glow rods stay). Balanced: inside the same
+  region. Chaos: anywhere on the same depth.
+- **Patrols and ambushes**: enemy ships and turrets placed on the map become other ones of their kind (ships with
+  ships, turrets with turrets), and roaming spawns bring other ships. An enemy only moves to a region opened no
+  earlier than its own, so late-game ships never wait at the start. Story ships, the snake and bosses stay.
+  Balanced: inside the same sea. Chaos: across seas.
+- **Hazards**: spike rocks and sea mines trade places (Geiger zones and rust pools stay). Balanced: as many of each
+  per region as before. Chaos: on the surface every spot is a rock or a mine at random.
+
+### Enemy guns and AI
+- **Enemy weapons** (on in both): enemies carry each other's guns — model, projectile, sound and damage come with
+  the gun. Bosses, turrets, drones, mechs and other machines keep theirs. Balanced: only guns of similar damage held
+  the same way (and the enemy shuffle still scales the damage to the replaced enemy). Chaos: any gun.
+- **Enemy AI** (off in Balanced, Chaos in Chaos): who keeps their distance, who rushes in, who hides. Balanced: only
+  gunman behaviors (a shotgunner may keep its distance like a sniper). Chaos: also melee rushers, berserkers, cowards.
+- **Explosive cover** (on in both): explosive barrels become a random kind (fire, ice, navy, atomic…), and in some
+  missions all low cover is explosive (Balanced 1 in 5, Chaos half; Chaos also turns hanging cover explosive).
+
+### Mission chaos (Lua hooks in the mission scripts)
+- **Mutator roulette** (off in Balanced, Chaos in Chaos): each mission gets its own modifiers — Double tap, Trigger
+  happy enemies, Slippery, Stubborn, Volatile (bots explode), Piercing rounds, Big booms, Sprinters… They are
+  announced when your crew lands and shown on the health bars. Balanced: half the missions, one mild mutator.
+  Chaos: every mission, one to three.
+- **Chaos events** (off in Balanced, 35% in Chaos): from your second turn on, at the start of each turn something may
+  happen: adrenaline (attacks don't end the turn), a lucky charm, a stunned or rusted enemy, overcharge, a ticking
+  enemy, spare parts, a mutiny (an enemy switches to another faction), a teleporter glitch (a crew member and an
+  enemy swap places), the alarm.
+- **Golden enemy** (on in both): one random ordinary enemy is golden (+3 health, +1 armor) and drops a prize when
+  scrapped. Balanced: half the missions, a rare item of about the mission's tier. Chaos: every mission, any item.
+- **Regional edicts** (off in Balanced, Chaos in Chaos): every world map region has its own edict (Chunky, Deadly,
+  Gear Up, Vectron Shield…), issued by the strongest ordinary enemy of a mission there — for pirates and atomics too.
+  Balanced: half the regions, mild edicts. Chaos: every region, any edict.
+
+The spoiler log lists every mission's mutators, prize and edict. Procedural missions get a script of their own for
+this (`Lua/Missions/swh2_rnd_<mission>.lua`). Errors are logged to
+`%APPDATA%\Thunderful\SteamWorld Heist II\swh2_randomizer.log` and never break the mission.
+
+### Crew, start and sub
+- **Starting jobs**: the job is the weapon class, so the default weapon of each crew member decides the job they join
+  with. Balanced: jobs swap between crew members. Chaos: any job each (some may be missing until you can switch jobs).
+- **Personal abilities**: crew members' own abilities (Daisy's stun gun…) move to other crew members. Balanced: both
+  abilities of a crew member move together. Chaos: on their own.
+- **Random start**: a new game starts with random money (Balanced up to 60, Chaos up to 400 and fragments), a random
+  weapon and a random utility.
+- **Sub weapons**: your ship weapon items fire each other's guns (angles, name and price stay), enemy ships swap guns.
+  Balanced: same weapon type and similar tier, enemies inside their faction. Chaos: anything. Bosses keep theirs.
+- **Sub upgrade costs**: fragment costs swap inside each tech tier.
+- **Loot decks**: how often each kind of loot drops. Balanced ±1 per entry, Chaos 1 to 3 times. Resets the loot decks
+  of existing saves.
+
 ### Just for fun
 - **Crew hats** (on in both): every crew member wears another crew member's own hat (Daisy and Wesley start with
   theirs). The captain keeps his.
@@ -207,10 +266,16 @@ aim previews stay. **Balanced**: inside the weapon class; **Chaos**: any player 
 - **Names** (off in Balanced, Chaos in Chaos): names of weapons, utilities, ship equipment, hats and enemies swap, in
   every language. Descriptions stay, so read those! Balanced: weapons with weapons, enemies with enemies… Chaos:
   everything together — an enemy may be called "Repair Kit". The spoiler log always uses the real names.
+- **Sounds** (on in both): shot, aim and reload sounds of weapons and the hurt sounds of bots. Balanced: inside the
+  weapon class. Chaos: a sniper may go "pew".
+- **Effects** (on in both): bullet trails, muzzle flashes, impacts and death effects. Balanced: trails with trails,
+  impacts with impacts. Chaos: a bullet may look like an explosion.
+- **Voices** (on in both): talking voices of characters. Chaos also swaps talk and radio portraits.
+- **Mystery items** (off in both): names and descriptions of weapons and utilities become "???"; the stats screen still
+  tells the truth.
 
 ## Not randomized
-- Random loot drops, which crew members you get and their classes (the tutorial is scripted around Daisy and
-  Wesley), mission maps, personal perks.
+- Which crew members you get, mission maps, boss fights.
 
 ## Install
 Unpack into the game folder (so you get `SteamWorld Heist 2\Mods\Randomizer\mod.json`), or install with Vortex.

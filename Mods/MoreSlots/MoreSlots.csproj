@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.MoreSlots</AssemblyName>
+    <RootNamespace>SWH2.Mods.MoreSlots</RootNamespace>
+  </PropertyGroup>
+
+</Project>

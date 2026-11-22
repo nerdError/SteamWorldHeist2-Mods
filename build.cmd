@@ -4,6 +4,7 @@ rem   build.cmd                 build only (or build and deploy, if build.local.
 rem   build.cmd deploy          build and copy SWH2ModLoader\ + Mods\ into the default Steam game folder
 rem   build.cmd deploy "D:\Games\SteamWorld Heist 2"
 rem   build.cmd nodeploy        build only, even with AUTO_DEPLOY=1
+rem   build.cmd rebuild         rebuild everything (by default unchanged loader/mods are reused from obj\package\)
 rem Personal defaults: copy build.local.example.cmd to build.local.cmd (not committed) and edit it.
 setlocal
 set AUTO_DEPLOY=
@@ -29,6 +30,7 @@ set ARGS=
 if defined DEPLOY (
   if defined GAME (set ARGS=-Deploy -Game "%GAME%") else (set ARGS=-Deploy)
 )
+if /i "%~1"=="rebuild" set ARGS=%ARGS% -Rebuild
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\package.ps1" %ARGS%
 set RC=%ERRORLEVEL%
 if %RC% neq 0 (

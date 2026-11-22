@@ -29,8 +29,11 @@ public sealed class LuaPatcher(GameContent content)
         content.WriteText(SystemLua, sys.Insert(at, "\r\n" + line), bom: HasBom(SystemLua));
     }
 
-    /// <summary>Mission scripts (Lua/Missions/*.lua). 60 procedural missions have no script and get no hooks.</summary>
-    public IEnumerable<string> MissionScripts => content.Find("Lua/Missions", "*.lua");
+    /// <summary>
+    /// Mission scripts (Lua/Missions/*.lua), including ones added by mods that ran earlier (e.g. the randomizer's
+    /// per-mission scripts for procedural missions). Procedural missions without a script get no hooks.
+    /// </summary>
+    public IEnumerable<string> MissionScripts => content.Find("Lua/Missions", "*.lua").Concat(content.FindAdded("Lua/Missions", "*.lua")).ToList();
 
     /// <summary>
     /// Appends a block to every mission script. The block runs in the mission SANDBOX (no pcall/error/io/os/_G):

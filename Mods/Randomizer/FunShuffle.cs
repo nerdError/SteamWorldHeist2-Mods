@@ -130,7 +130,39 @@ public static class FunShuffle
             }
         }
 
-        // Language/<lang>.csv only (not *_conversations / *_speakers): "id<TAB>text[<TAB>…]".
+        int files = RewriteTexts(ctx, (id, texts) => source.TryGetValue(id, out var from) && texts.TryGetValue(from, out var text) && text.Length > 0 ? text : null);
+        ctx.Log($"Names: {source.Count} names swapped in {files} languages.");
+    }
+
+    /// <summary>
+    /// Mystery items: names, descriptions and flavor texts of player weapons and utilities become "???" in every
+    /// language, so shopping is blind (the stats screen still tells the truth). Runs after the names module.
+    /// </summary>
+    public static void ApplyMystery(RandomizerContext ctx)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var i in ctx.Items.All.Where(i => !i.Abstract && i.RarityType != "default" &&
+                     (i.Kind == "Utility" || (i.Kind == "Weapon" && i.File == "Definitions/weapons.xml"))))
+        {
+            var id = i.NameId ?? (i.Kind == "Weapon" ? "weapon_" + i.Name : i.Name);
+            ids.Add(id);
+            ids.Add(id + "_description");
+            ids.Add(id + "_flavor");
+        }
+        int files = RewriteTexts(ctx, (id, _) => ids.Contains(id) ? "???" : null);
+        ctx.Spoiler.Section("Mystery items");
+        ctx.Spoiler.Line($"{ids.Count / 3} weapon and utility names are hidden.");
+        ctx.Log($"Mystery items: {ids.Count / 3} items hidden in {files} languages.");
+    }
+
+    /// <summary>
+    /// Rewrites the text column of Language/&lt;lang&gt;.csv (not *_conversations / *_speakers): "id&lt;TAB&gt;text[&lt;TAB&gt;…]".
+    /// <paramref name="replace"/> gets the id and all texts of that language, and returns the new text or null.
+    /// Returns how many languages changed.
+    /// </summary>
+    static int RewriteTexts(RandomizerContext ctx, Func<string, Dictionary<string, string>, string?> replace)
+    {
+        var c = ctx.Content;
         int files = 0;
         foreach (var path in c.Find("Language", "*.csv").Where(p => !Path.GetFileName(p).Contains('_')))
         {
@@ -149,7 +181,7 @@ public static class FunShuffle
                 if (line.Length == 0 || line[0] == '#') continue;
                 bool cr = line.EndsWith("\r", StringComparison.Ordinal);
                 var parts = line.TrimEnd('\r').Split('\t');
-                if (parts.Length < 2 || !source.TryGetValue(parts[0], out var from) || !texts.TryGetValue(from, out var text) || text.Length == 0) continue;
+                if (parts.Length < 2 || replace(parts[0], texts) is not { } text || text == parts[1]) continue;
                 parts[1] = text;
                 lines[i] = string.Join("\t", parts) + (cr ? "\r" : "");
                 changed = true;
@@ -158,6 +190,6 @@ public static class FunShuffle
             c.WriteText(path, string.Join("\n", lines), bom);
             files++;
         }
-        ctx.Log($"Names: {source.Count} names swapped in {files} languages.");
+        return files;
     }
 }

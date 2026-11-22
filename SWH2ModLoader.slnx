@@ -7,6 +7,7 @@
   <Folder Name="/Mods/">
     <Project Path="Mods/Randomizer/Randomizer.csproj" />
     <Project Path="Mods/Turbo/Turbo.csproj" />
+    <Project Path="Mods/MoreSlots/MoreSlots.csproj" />
     <Project Path="Mods/Challenges/Challenges.csproj" />
     <Project Path="Mods/CheatMenu/CheatMenu.csproj" />
   </Folder>

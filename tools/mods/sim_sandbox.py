@@ -16,6 +16,8 @@ ap.add_argument("mod")
 ap.add_argument("mission")
 ap.add_argument("--frames", type=int, default=130)
 ap.add_argument("--resume", action="store_true")
+ap.add_argument("--calls", type=int, default=80, help="how many engine calls to print")
+ap.add_argument("--turns", type=int, default=2, help="player turns to simulate (each followed by an enemy turn)")
 ap.add_argument("--file", action="append", default=[])
 a = ap.parse_args()
 
@@ -62,6 +64,11 @@ function make_env()
     GetActorHealth = function() return 5 end,
     HasModifier = function() return false end,
     GetPlayerFaction = function() return "cowbots" end,
+    GetEntityDefinition = function(e) return e >= 200 and "enemy_navy_seabot" or "crew_daisy" end,
+    GetActorFaction = function(e) return e >= 200 and "navy" or "cowbots" end,
+    GetAlertActors = function() return {201} end,
+    IsActorHostile = function(e) return e >= 200 end,
+    GetEntityPosition = function(e) return {x = e, y = 0} end,
   }
   setmetatable(env, {__index = function(t, k)
     if type(k) == "string" and k:match("^%u") then
@@ -76,8 +83,9 @@ src = open(os.path.join(a.mod, "Lua", "Missions", a.mission + ".lua"), encoding=
 f, err = L.eval("function(s, e) local f, err = load(s, 'mission', 't', e); return f, tostring(err) end")(src, env)
 assert f, err
 f()
-start = [("OnMissionStart", ()), ("OnCrewDeployed", ()), ("OnFactionTurnBegin", ("cowbots",)),
-         ("OnFactionTurnBegin", ("navy",)), ("OnFactionTurnBegin", ("cowbots",))]
+start = [("OnMissionStart", ()), ("OnCrewDeployed", ())]
+for _ in range(a.turns): start += [("OnFactionTurnBegin", ("cowbots",)), ("OnFactionTurnBegin", ("navy",))]
+start += [("OnEntityKilled", (201,))]
 for cb, args in ([("OnMissionResume", ())] if a.resume else start):
     fn = env[cb]
     if fn: fn(*args)
@@ -85,7 +93,7 @@ upd = env["OnUpdate"]
 if upd:
     for _ in range(a.frames): upd(1 / 60)
 calls = list(L.eval("CALLS").values())
-print(f"engine calls ({len(calls)}):", ", ".join(calls[:80]) + (" …" if len(calls) > 80 else ""))
+print(f"engine calls ({len(calls)}):", ", ".join(calls[:a.calls]) + (" …" if len(calls) > a.calls else ""))
 for p in sorted(glob.glob(os.path.join(data, "*"))):
     print(f"---- {os.path.basename(p)}")
     print(open(p, encoding="utf-8").read().rstrip())

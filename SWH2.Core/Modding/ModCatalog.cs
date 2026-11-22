@@ -196,6 +196,13 @@ public sealed class ModProfile
 
     public ModSettings SettingsFor(ModManifest mod) => new(mod, Settings.GetValueOrDefault(mod.Id));
 
+    /// <summary>Save slots the game shows with this profile: 3, or the setting of Mods/MoreSlots when it is enabled.</summary>
+    public int SaveSlots(GameInstall game)
+    {
+        var mod = IsEnabled("MoreSlots") ? ModCatalog.Discover(game).FirstOrDefault(m => m.Id.Equals("MoreSlots", StringComparison.OrdinalIgnoreCase)) : null;
+        return mod != null ? Math.Max(SaveBanks.GameSlots, SettingsFor(mod).Int("slots")) : SaveBanks.GameSlots;
+    }
+
     public void Store(ModManifest mod, ModSettings settings) =>
         Settings[mod.Id] = settings.Values.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
 

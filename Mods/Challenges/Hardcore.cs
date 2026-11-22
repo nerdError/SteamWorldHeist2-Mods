@@ -64,13 +64,10 @@ public static class Hardcore
                 .Replace("{PERMADEATH}", permadeath ? "true" : "false")
                 .Replace("{BITS}", IdBits.ToString());
         }
-        int n = ctx.Lua.AppendToMissionScripts(script =>
-            Block(script, ctx.Content.ReadOriginal($"Lua/Missions/{script}.lua") is var b ? Encoding.UTF8.GetString(b) : ""));
-        if (ctx.Content.Exists(MissionScripts.GenericPath))
-        {
-            MissionScripts.AppendToGeneric(ctx, Block(MissionScripts.GenericName, ""));
-            n++;
-        }
+        // Scripts added by mods (the generic script, the randomizer's per-mission scripts) are hooked too.
+        int n = ctx.Lua.AppendToMissionScripts(script => ctx.Content.ExistsInOriginal($"Lua/Missions/{script}.lua")
+            ? Block(script, Encoding.UTF8.GetString(ctx.Content.ReadOriginal($"Lua/Missions/{script}.lua")))
+            : Block(script, ""));
 
         if (permadeath)
             ctx.Report.Line($"Permadeath: {crew.Count} recruitable crewmates can be scrapped for good: {string.Join(", ", crew.Select(c => c.Name))}.");

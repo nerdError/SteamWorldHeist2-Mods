@@ -19,6 +19,11 @@ Usage:
                --dry-run writes the changed files (+ patched exe, reports) to OUTDIR instead.
   swh2 restore                     put the original game files back
   swh2 extract OUTDIR [--assets]   unpack the original game data
+  swh2 saves                       save slots and save banks (copies of slots kept outside the game)
+  swh2 saves store SLOT NAME [--overwrite]   copy slot 1..N into bank NAME
+  swh2 saves load  NAME SLOT       put bank NAME into a slot (a used slot is kept as an "auto …" bank first)
+  swh2 saves rename NAME NEW  |  swh2 saves delete NAME
+               --account ID picks the Steam account (default: the one that saved last)
   swh2 roundtrip                   developer check: XML load/save is lossless
   swh2 <command> ...               commands added by installed mods (listed below), e.g. swh2 cheat win
 
@@ -168,6 +173,9 @@ try
             Pipeline.Extract(game, positional[0], opts.ContainsKey("assets"), Log);
             return 0;
 
+        case "saves":
+            return Saves(game, profile, positional, opts, Log);
+
         case "roundtrip":
             return Pipeline.XmlRoundTripCheck(game, Log) == 0 ? 0 : 1;
 
@@ -191,6 +199,53 @@ catch (Exception ex)
 {
     Console.Error.WriteLine("Error: " + ex.Message);
     return 1;
+}
+
+static int Saves(GameInstall game, ModProfile profile, List<string> args, Dictionary<string, string> opts, Action<string> log)
+{
+    var accounts = SaveBanks.Accounts();
+    var banks = opts.TryGetValue("account", out var id)
+        ? accounts.FirstOrDefault(a => a.AccountId == id) ?? throw new ArgumentException($"No saves for account {id}. Found: {string.Join(", ", accounts.Select(a => a.AccountId))}")
+        : accounts.FirstOrDefault() ?? throw new ArgumentException($"No saves found in {SaveBanks.SavesRoot}.");
+    int Slot(string s) => int.TryParse(s, out int n) && n >= 1 ? n - 1 : throw new ArgumentException($"'{s}': slot number expected (1, 2, 3…)");
+    void NeedClosed() { if (GameRunning()) throw new InvalidOperationException("Close the game first — it would write over the slot."); }
+    string sub = args.Count > 0 ? args[0] : "list";
+    switch (sub)
+    {
+        case "list":
+            log($"Account {banks.AccountId}: {banks.SaveDir}");
+            foreach (var s in banks.Slots(profile.SaveSlots(game)))
+                log($"  slot {s.Index + 1,2}  {(s.Used ? $"{s.Modified:yyyy-MM-dd HH:mm}  {s.Size / 1024} KB" : "(empty)")}");
+            log($"Banks: {banks.BanksDir}");
+            var list = banks.Banks();
+            if (list.Count == 0) log("  (none)");
+            foreach (var b in list)
+                log($"  {b.Saved:yyyy-MM-dd HH:mm}  {b.Name}{(b.FromSlot is { } f ? $"  (from slot {f + 1})" : "")}");
+            return 0;
+        case "store" when args.Count == 3:
+        {
+            var b = banks.Store(Slot(args[1]), args[2], opts.ContainsKey("overwrite"));
+            log($"Slot {args[1]} saved as bank '{b.Name}'.");
+            return 0;
+        }
+        case "load" when args.Count == 3:
+        {
+            NeedClosed();
+            var auto = banks.Load(args[1], Slot(args[2]));
+            if (auto != null) log($"Slot {args[2]} was kept as bank '{auto.Name}'.");
+            log($"Bank '{args[1]}' is now in slot {args[2]}.");
+            return 0;
+        }
+        case "rename" when args.Count == 3:
+            log($"Renamed to '{banks.Rename(args[1], args[2]).Name}'.");
+            return 0;
+        case "delete" when args.Count == 2:
+            banks.Delete(args[1]);
+            log($"Deleted bank '{args[1]}'.");
+            return 0;
+        default:
+            throw new ArgumentException("saves: list | store SLOT NAME | load NAME SLOT | rename NAME NEW | delete NAME");
+    }
 }
 
 static bool GameRunning() => System.Diagnostics.Process.GetProcessesByName("SteamWorld Heist 2").Length > 0;

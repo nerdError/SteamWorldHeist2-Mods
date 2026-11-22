@@ -131,6 +131,16 @@ public sealed class GameContent : IDisposable
         return OriginalFiles.Where(f => rx.IsMatch(f)).OrderBy(f => f, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>Like <see cref="Find"/>, but for files that mods added (not in the original paks).</summary>
+    public IEnumerable<string> FindAdded(string dir, string pattern)
+    {
+        var rx = new System.Text.RegularExpressions.Regex(
+            "^" + System.Text.RegularExpressions.Regex.Escape(Normalize(dir).TrimEnd('/') + "/" + pattern)
+                .Replace(@"\*", "[^/]*").Replace(@"\?", "[^/]") + "$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return _changes.Keys.Where(f => !_index.ContainsKey(f) && rx.IsMatch(f)).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     /// <summary>All edits grouped by the pak they belong to.</summary>
     public Dictionary<string, Dictionary<string, byte[]>> CollectChanges()
     {

@@ -39,6 +39,7 @@ A mod manager / modding framework for **SteamWorld Heist 2** and four mods built
 | **Turbo Battles** — speeds up enemy turns and enemy/reinforcement reveals | `Mods/Turbo` | `Turbo-<ver>.zip` |
 | **Challenge Manager** — challenges: "no grind", "no checkpoints" | `Mods/Challenges` | `Challenges-<ver>.zip` |
 | **Cheat Menu** — in-mission cheats: a loader window + hotkeys, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
+| **More Save Slots** — 4–10 save slots in the main menu instead of 3 (exe patch) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
 
 Nexus page texts: [docs/NEXUS_LOADER.md](docs/NEXUS_LOADER.md) and `Mods/*/README.md`.
 How to make mods: [docs/MAKING_MODS.md](docs/MAKING_MODS.md).
@@ -74,7 +75,9 @@ form from them, the CLI accepts `swh2 set <mod> key=value`. Enabled mods and the
 #### GUI (`SWH2ModLoader.exe`)
 Mod list (checkbox = enabled, version, author, `exe` marker), the selected mod's settings on the right.
 **Install .zip…** or drag a mod archive onto the list to install/update; **Remove** deletes a mod.
-**Apply to game** builds and installs; **Restore original files** brings back the originals.
+**Apply to game** builds and installs; **▶ Play** starts the game; **Restore original files** brings back the originals.
+**Save banks…** stores a save slot as a named copy outside the game and puts any copy back into any slot
+(more runs than the game has slots; banks are in `%APPDATA%\SWH2ModLoader\SaveBanks\<steam id>\`).
 Next to the buttons are the enabled mods' windows (e.g. **Cheats…** for Cheat Menu).
 
 #### CLI (`swh2.exe`)
@@ -89,6 +92,7 @@ swh2 install --only Randomizer --set Randomizer.seed=1 --dry-run out   # one-off
 swh2 restore
 swh2 remove Turbo
 swh2 extract C:\SWH2_extracted [--assets]
+swh2 saves                                  # save slots + save banks; saves store 2 "seed 123" | saves load "seed 123" 1
 swh2 roundtrip                              # self-test: XML survives a lossless round trip
 swh2 cheat win|heal|...                     # Cheat Menu command (swh2 help lists all mod commands)
 ```
@@ -132,6 +136,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `AbilityStats`, `TextShuffle`, `LookShuffle`, `FunShuffle`; `Story` (progression, story timeline) |
 | `Mods/Turbo/` | battle time-scale patch (code from `exe_patch.py`, ported as bytes + a relocation table) |
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
+| `Mods/MoreSlots/` | save slot count patch (exe, 7 hard-coded limits) + shorter slot buttons in `UI/ui.me` |
 | `Mods/CheatMenu/` | Lua backend and mission hook (`Lua/*.lua`, embedded in the dll), modifiers, `CheatForm` window, `CheatClient` (file-based protocol) |
 | `tools/package.ps1` | builds the Nexus archives |
 | `tools/re/`, `tools/mods/` | developer tools (exe RE, Lua mod generators, sandbox simulator) |
@@ -181,6 +186,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | **Turbo Battles** — ускорение ходов врагов и показа врагов/подкреплений | `Mods/Turbo` | `Turbo-<ver>.zip` |
 | **Challenge Manager** — челленджи: «без гринда», «без чекпоинтов» | `Mods/Challenges` | `Challenges-<ver>.zip` |
 | **Cheat Menu** — читы в миссиях: окно в загрузчике + горячие клавиши, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
+| **More Save Slots** — 4–10 слотов сохранения в главном меню вместо 3 (патч exe) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
 
 Тексты для страниц Nexus: [docs/NEXUS_LOADER.md](docs/NEXUS_LOADER.md) и `Mods/*/README.md`.
 Как делать моды: [docs/MAKING_MODS.md](docs/MAKING_MODS.md).
@@ -214,9 +220,15 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 ### Использование
 
 #### GUI (`SWH2ModLoader.exe`)
-Список модов (галочка = включён, версия, автор, пометка `exe`), справа — настройки выбранного мода.
+Список модов (галочка = включён, версия, пометка `exe`), справа — настройки выбранного мода: поиск, сворачиваемые
+разделы, описания вкл/выкл, сброс, изменённые значения подсвечены синим; колесо мыши не меняет значения.
+Форма настроек каждого мода строится один раз (`SettingsEditor`: ручная раскладка, окна контролов создаются лениво)
+и дальше обновляется на месте. Ширина списка, высота лога, размер окна и свёрнутые разделы запоминаются
+(`%APPDATA%\SWH2ModLoader\settings.json`).
 **Install .zip…** или перетащить архив мода на список — установка/обновление; **Remove** — удалить мод.
-**Apply to game** — собрать и установить; **Restore original files** — вернуть оригиналы.
+**Apply to game** — собрать и установить; **▶ Play** — запустить игру; **Restore original files** — вернуть оригиналы.
+**Save banks…** — сохранить слот как именованную копию вне игры и вернуть любую копию в любой слот
+(забегов больше, чем слотов в игре; банки лежат в `%APPDATA%\SWH2ModLoader\SaveBanks\<steam id>\`).
 Справа от кнопок — окна включённых модов (например, **Cheats…** у Cheat Menu).
 
 #### CLI (`swh2.exe`)
@@ -231,6 +243,7 @@ swh2 install --only Randomizer --set Randomizer.seed=1 --dry-run out   # раз�
 swh2 restore
 swh2 remove Turbo
 swh2 extract C:\SWH2_extracted [--assets]
+swh2 saves                                  # слоты и банки сохранений; saves store 2 "сид 123" | saves load "сид 123" 1
 swh2 roundtrip                              # самопроверка: XML сохраняется без потерь
 swh2 cheat win|heal|...                     # команда мода Cheat Menu (swh2 help — все команды модов)
 ```
@@ -250,6 +263,9 @@ swh2 cheat win|heal|...                     # команда мода Cheat Menu
 
 Запускать нужно только `SWH2ModLoader\SWH2ModLoader.exe`; `deploy` не трогает `Backup\`/`profile.json` и файлы игры
 (они меняются только по **Apply**). Exe в `bin\` папках проектов — промежуточные, их можно игнорировать.
+Неизменённые загрузчик и моды не пересобираются: их сборка лежит в `obj\package\<имя>\` вместе с хешем исходников
+(папка проекта + `SWH2.Core` + `Directory.Build.props`) — если хеш тот же, `dotnet` не запускается. Пересобрать всё
+принудительно: `build.cmd rebuild`.
 ```bash
 dotnet build SWH2ModLoader.slnx -c Release                    # только сборка (для разработки)
 powershell -ExecutionPolicy Bypass -File tools/package.ps1    # то же, что build.cmd
@@ -274,6 +290,8 @@ PolySharp (полифиллы на этапе компиляции), недос�
 | `Mods/Randomizer/` | `MissionShuffle`, `ItemShuffle` (+ key item logic), `ShopShuffle`, `EnemyShuffle`, `StatRandomizer`, `PerkShuffle`, `AbilityStats`, `TextShuffle`, `LookShuffle`, `FunShuffle`; `Story` (progression, story timeline) |
 | `Mods/Turbo/` | патч масштаба времени боя (код из `exe_patch.py`, перенесён байтами + таблица релокаций) |
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
+| `Mods/MoreSlots/` | патч числа слотов сохранения (exe, 7 зашитых ограничений) + кнопки слотов пониже в `UI/ui.me` |
+| `Mods/MoreSlots/` | save slot count patch (exe, 7 hard-coded limits) + shorter slot buttons in `UI/ui.me` |
 | `Mods/CheatMenu/` | Lua-бэкенд и хук миссий (`Lua/*.lua`, встроены в dll), модификаторы, окно `CheatForm`, `CheatClient` (файловый протокол) |
 | `tools/package.ps1` | сборка архивов для Nexus |
 | `tools/re/`, `tools/mods/` | инструменты разработчика (RE exe, генераторы Lua-модов, симулятор песочницы) |
