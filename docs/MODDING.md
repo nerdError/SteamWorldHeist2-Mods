@@ -28,6 +28,7 @@
 | **SWH2 Mod Loader 1.0** (GUI-менеджер модов + CLI + API `mod.json`/`IModPlugin`) и моды Randomizer / Turbo / Challenges | Собраны (`tools/package.ps1` → `dist/`), проверены на копии игры: рандомизатор байт-в-байт = старый, exe Turbo+NoCheckpoints байт-в-байт = `exe_patch.py`, миграция старой раскладки, откат. **В игре ещё не проверены**, в установленную игру не ставились |
 | Новый контент: тестовая миссия **NewMissionTest** (`tools/mods/make_new_mission_test.py`) | **Проверено в игре** (миссия, скрипт, строки); перенесена к бару Angler's Reef — см. «Новый контент» |
 | Своя кампания: **TestCampaign** (`tools/mods/make_test_campaign.py`) — 3 миссии + свои квесты, оригинальный сюжет отключён | Сгенерирован, dry-run ок, **в игре не проверен** |
+| Сюжетная кампания **RebelCampaign** «Разорванная цепь» (`tools/mods/make_rebel_campaign.py`, `docs/CAMPAIGN_REBELS.md`) — восток, союзники-ИИ, 6 миссий-концептов | Сгенерирован, sim_sandbox + dry-run ок, **в игре не проверен** |
 
 Что сейчас установлено в игре (состояние до загрузчика; первый Apply/Restore новым загрузчиком перенесёт
 `SWH2Randomizer\` → `SWH2ModLoader\` и `SWH2Randomizer\Mods\*` → `Mods\`, а exe с turbo от `exe_patch.py`

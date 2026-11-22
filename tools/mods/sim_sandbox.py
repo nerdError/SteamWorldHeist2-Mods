@@ -70,6 +70,9 @@ function make_env()
     IsActorHostile = function(e) return e >= 200 end,
     GetEntityPosition = function(e) return {x = e, y = 0} end,
   }
+  -- Vector(x, y) and the constants Vector.Left/Right/Up/Down
+  env.Vector = setmetatable({Left = {x = -1, y = 0}, Right = {x = 1, y = 0}, Up = {x = 0, y = -1}, Down = {x = 0, y = 1}},
+    {__call = function(_, x, y) return {x = x, y = y} end})
   setmetatable(env, {__index = function(t, k)
     if type(k) == "string" and k:match("^%u") then
       return function(...) rec(k, ...); if stubs[k] then return stubs[k](...) end end
