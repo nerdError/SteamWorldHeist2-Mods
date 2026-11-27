@@ -22,6 +22,8 @@ do
 		weaken = function() each(GetEnemyActors(), function(e) SetActorHealth(e, 1) end) end,
 		alarm_off = function() SetAlarmActive(false) end,
 		give = function(item) GiveItem(item, true) end,
+		-- The game's own way from one mission into another (marooned_mother.lua): this one ends, that one loads.
+		mission = function(id) ChangeMission(id) end,
 	}
 
 	run(function() C.Enter(cheatScript) end)

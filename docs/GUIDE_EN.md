@@ -112,7 +112,7 @@ CheatMenu
        Ctrl+Alt+2  heal crew                Ctrl+Alt+6  invulnerable crew (on/off)
        Ctrl+Alt+3  kill all enemies         Ctrl+Alt+7  freeze enemies (on/off)
        Ctrl+Alt+4  enemies to 1 HP          Ctrl+Alt+8  attacks don't end turn (on/off)
-     Give any item — from the window.
+     Give any item, start any mission — from the window (inside a mission).
 
 Co-op (network) — mod Coop, experimental
   - Two players, each with their own game (Steam or GOG) and the mod applied. Select the mod → "Network game…":

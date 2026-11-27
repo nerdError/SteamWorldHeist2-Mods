@@ -8,7 +8,7 @@ namespace SWH2.Mods.CheatMenu;
 /// </summary>
 public static class CheatClient
 {
-    public static readonly string[] Actions = ["win", "heal", "kill", "weaken", "alarm_off", "give"];
+    public static readonly string[] Actions = ["win", "heal", "kill", "weaken", "alarm_off", "give", "mission"];
     public static readonly string[] Toggles = ["god", "freeze", "spinup"];
 
     /// <summary>

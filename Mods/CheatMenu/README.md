@@ -15,6 +15,7 @@ The game's own debug menu was removed from the release build. This mod brings ch
 | Freeze enemies (toggle) | Ctrl+Alt+7 |
 | Attacks don't end turn (toggle) | Ctrl+Alt+8 |
 | Give any item | from the window |
+| Start any mission (bars and other places too) | from the window |
 
 ## Use
 1. Unpack into the game folder (`SteamWorld Heist 2\Mods\CheatMenu\mod.json`) or use Vortex.
@@ -22,7 +23,7 @@ The game's own debug menu was removed from the release build. This mod brings ch
 3. Click **Cheats…** in the loader and keep the window open while you play (hotkeys work while the game has focus).
    Cheats work inside missions; the window shows whether a mission is running.
 
-Command line: `swh2 cheat win`, `swh2 cheat god on`, `swh2 cheat give <item_id>`, `swh2 cheat status`.
+Command line: `swh2 cheat win`, `swh2 cheat god on`, `swh2 cheat give <item_id>`, `swh2 cheat mission <mission_id>`, `swh2 cheat status`.
 
 ## How it works
 Lua can't read the keyboard or draw UI, so the window writes commands to
@@ -51,6 +52,7 @@ Works together with other mods: the loader merges every mod's Lua hooks.
 | Заморозить врагов (вкл/выкл) | Ctrl+Alt+7 |
 | Атаки не заканчивают ход (вкл/выкл) | Ctrl+Alt+8 |
 | Выдать любой предмет | из окна |
+| Запустить любую миссию (бары и другие места тоже) | из окна |
 
 ## Как пользоваться
 1. Распакуйте в папку игры (`SteamWorld Heist 2\Mods\CheatMenu\mod.json`) или через Vortex.
@@ -58,7 +60,7 @@ Works together with other mods: the loader merges every mod's Lua hooks.
 3. Нажмите **Cheats…** в загрузчике и не закрывайте окно, пока играете (горячие клавиши работают, когда игра в фокусе).
    Читы работают внутри миссий; окно показывает, идёт ли миссия.
 
-Командная строка: `swh2 cheat win`, `swh2 cheat god on`, `swh2 cheat give <item_id>`, `swh2 cheat status`.
+Командная строка: `swh2 cheat win`, `swh2 cheat god on`, `swh2 cheat give <item_id>`, `swh2 cheat mission <mission_id>`, `swh2 cheat status`.
 
 ## Как это работает
 Lua в игре не умеет читать клавиатуру и рисовать интерфейс, поэтому окно пишет команды в

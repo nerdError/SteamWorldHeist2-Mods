@@ -1218,6 +1218,8 @@ static void HostPump(void *sim)
     }
 }
 
+static int sceneAt[16];   /* guest: the script entry each of the host's scene lines came before */
+
 static void Pump(void *sim)
 {
     if (mode != NET_REPLAY || HELD()) return;
@@ -1232,6 +1234,14 @@ static void Pump(void *sim)
     {
         NetLog("# DIFF: %d commands sent to the host did not come back in %d frames", pending, PENDING_TIMEOUT);
         pending = 0;
+    }
+    /* The host is in a scene this game hasn't made (its next mission, or the world map): what follows belongs there,
+     * not to this battle (a guest on its results screen played the host's next mission into its old one). */
+    if (live && scenePos >= 0 && scenePos < scenesLen && sceneAt[scenePos] <= scriptPos)
+    {
+        static int toldAt = -1;
+        if (toldAt != scriptPos) { toldAt = scriptPos; NetLog("# the host went on to another scene: this battle's replay stops here"); }
+        return;
     }
     if (scriptPos >= scriptLen) { GuestPlayPump(sim); return; }
     Entry *e = &script[scriptPos];
@@ -1642,7 +1652,7 @@ static void ParseScriptLine(const char *line)
     }
     if (sscanf(line, "scene r=%x:%x", &z, &w) == 2)
     {
-        if (scenesLen < 16) { sceneZ[scenesLen] = z; sceneW[scenesLen] = w; scenesLen++; }
+        if (scenesLen < 16) { sceneZ[scenesLen] = z; sceneW[scenesLen] = w; sceneAt[scenesLen] = scriptLen; scenesLen++; }
         return;
     }
     int o = NetParseLine(line, &tmp);

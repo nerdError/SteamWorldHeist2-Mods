@@ -122,6 +122,9 @@ public static class NetTest
     }
 
     /// <summary>Data folder of the second game copy started (the Coop dll gives it instanceN\, N = 2).</summary>
+    /// <summary>--next: the host's next battle (the test mission again: its crew and script are known to work).</summary>
+    const string NextMission = "west_caribbea_23";
+
     public static string GuestDir => Path.Combine(Dir, "instance2");
     public static string GuestReplayedLog => Path.Combine(GuestDir, "swh2_net_replayed.log");
 
@@ -162,7 +165,8 @@ public static class NetTest
         if (mapQuit) hostScript.AddRange(toMap);
         // --next (with --win): both go to the world map; the host's ship stands at the next mission's marker, Return enters it
         // (its game saves there, held until the guest comes); the guest's dll is to quit to the main menu and Continue into it.
-        if (next) hostScript.AddRange(toMap.Concat(new[] { "wait 8000", "key space", "wait 4000", "key space", "wait 4000", "key return", "wait 4000", "popups on", "cutscenes on", "enter 3000" }));
+        // --next: the host goes straight into its next battle (CheatMenu "mission", the game's ChangeMission) while the
+        // guest wins and goes to the world map: its dll is to see the host's new battle, quit to the main menu and Continue.
         File.WriteAllLines(AutoScriptFile, hostScript);
 
         // The guest: same start save in its own slot, live replay from the host, same autopilot.
@@ -242,9 +246,9 @@ public static class NetTest
                 if (inAt != null && !winSent && (DateTime.Now - inAt.Value).TotalSeconds >= winSec)
                 {
                     winSent = true;
-                    foreach (var dir in new[] { Dir, GuestDir })
-                        File.AppendAllText(Path.Combine(dir, "swh2_cheats_cmd.txt"), $"{DateTime.UtcNow:HHmmssfff} {DateTimeOffset.UtcNow.ToUnixTimeSeconds()} win\n");
-                    sb.AppendLine($"Cheat \"win\" sent to both {winSec} s into the battle.");
+                    foreach (var (dir, cheat) in new[] { (Dir, next ? "mission " + NextMission : "win"), (GuestDir, "win") })
+                        File.AppendAllText(Path.Combine(dir, "swh2_cheats_cmd.txt"), $"{DateTime.UtcNow:HHmmssfff} {DateTimeOffset.UtcNow.ToUnixTimeSeconds()} {cheat}\n");
+                    sb.AppendLine(next ? $"Cheats {winSec} s into the battle: host \"mission {NextMission}\", guest \"win\"." : $"Cheat \"win\" sent to both {winSec} s into the battle.");
                 }
                 if (size > 0 && overAt == null && (next ? ReadShared(log).Contains("# joining the host's battle") : ReadShared(log).Contains("# mission over"))) overAt = DateTime.Now;
                 if (overAt != null && (DateTime.Now - overAt.Value).TotalSeconds >= Math.Max(3, afterSec))

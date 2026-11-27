@@ -38,6 +38,7 @@ public sealed class CheatForm : Form
     readonly Dictionary<string, CheckBox> _toggles = [];
     readonly Label _status = new() { AutoSize = true, Font = new Font("Segoe UI", 10F, FontStyle.Bold) };
     readonly ComboBox _item = new() { Width = 360, AutoCompleteMode = AutoCompleteMode.SuggestAppend, AutoCompleteSource = AutoCompleteSource.ListItems };
+    readonly ComboBox _mission = new() { Width = 360, AutoCompleteMode = AutoCompleteMode.SuggestAppend, AutoCompleteSource = AutoCompleteSource.ListItems };
     readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Font = new Font("Consolas", 9F) };
     readonly System.Windows.Forms.Timer _timer = new() { Interval = 1000 };
     readonly Dictionary<string, DateTime> _lastClick = [];
@@ -61,7 +62,7 @@ public sealed class CheatForm : Form
     void BuildLayout()
     {
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 1 };
-        for (int i = 0; i < 5; i++) root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        for (int i = 0; i < 6; i++) root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         root.Controls.Add(_status);
@@ -107,6 +108,13 @@ public sealed class CheatForm : Form
         giveRow.Controls.AddRange([_item, give]);
         root.Controls.Add(giveRow);
 
+        var go = new Button { Text = "Start mission", AutoSize = true };
+        tips.SetToolTip(go, "Leaves the current mission and loads this one (bars and other places too), as the game does between two story missions.");
+        go.Click += (_, _) => { if (IdOf(_mission.Text) is { Length: > 0 } id) Send("mission", id); };
+        var goRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+        goRow.Controls.AddRange([_mission, go]);
+        root.Controls.Add(goRow);
+
         var logBox = new GroupBox { Text = "Results (swh2_cheats.log)", Dock = DockStyle.Fill, Padding = new Padding(8) };
         logBox.Controls.Add(_log);
         root.Controls.Add(logBox);
@@ -126,11 +134,15 @@ public sealed class CheatForm : Form
 
     void GiveSelected()
     {
-        var text = _item.Text.Trim();
-        // Entries look like "Display name [item_id]"; a raw id typed by hand works too.
+        if (IdOf(_item.Text) is { Length: > 0 } id) Send("give", id);
+    }
+
+    /// <summary>Entries look like "Display name [id]"; a raw id typed by hand works too.</summary>
+    static string IdOf(string text)
+    {
+        text = text.Trim();
         var open = text.LastIndexOf('[');
-        var id = open >= 0 && text.EndsWith(']') ? text[(open + 1)..^1] : text;
-        if (id.Length > 0) Send("give", id);
+        return open >= 0 && text.EndsWith("]") ? text.Substring(open + 1, text.Length - open - 2) : text;
     }
 
     void LoadItemsAsync()
@@ -140,12 +152,19 @@ public sealed class CheatForm : Form
         Task.Run(() =>
         {
             using var content = GameContent.OpenOriginal(new GameFiles(game));
-            var items = new ItemCatalog(content, Localization.Load(content));
-            return items.All.Where(i => !i.Abstract).Select(i => items.Display(i.Name)).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            var loc = Localization.Load(content);
+            var items = new ItemCatalog(content, loc);
+            var shown = items.All.Where(i => !i.Abstract).Select(i => items.Display(i.Name)).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            // Missions: every non-template <Mission> of Definitions/missions*.de, named as on the world map when it has a name.
+            var missions = content.Find("Definitions", "missions*.de")
+                .SelectMany(f => content.Xml(f).Definitions("Mission")).Where(m => !m.IsAbstract())
+                .Select(m => loc.Get("mission_" + m.Name()) is { } n ? $"{n} [{m.Name()}]" : m.Name())
+                .Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            return (shown, missions);
         }).ContinueWith(t =>
         {
             if (IsDisposed || t.IsFaulted) return;
-            BeginInvoke(() => _item.Items.AddRange(t.Result));
+            BeginInvoke(() => { _item.Items.AddRange(t.Result.shown); _mission.Items.AddRange(t.Result.missions); });
         });
     }
 

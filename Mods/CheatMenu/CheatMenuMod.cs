@@ -95,6 +95,7 @@ public sealed class CheatMenuMod : IModPlugin, IModTool, IModCommand
             if (CheatClient.Toggles.Contains(a[0]))
                 arg = arg is "on" or "1" ? "1" : arg is "off" or "0" ? "0" : throw new ArgumentException($"{a[0]}: expected on|off");
             else if (a[0] == "give" && arg == null) throw new ArgumentException("give: ITEM required");
+            else if (a[0] == "mission" && arg == null) throw new ArgumentException("mission: MISSION id required (e.g. west_caribbea_b_bar)");
             ctx.Log($"Queued '{string.Join(" ", a)}' (id {CheatClient.Send(a[0], arg)}).");
             return 0;
         }
