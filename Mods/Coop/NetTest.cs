@@ -135,7 +135,9 @@ public static class NetTest
     /// which plays them (logged <c>by=guest</c>; the host waits for them where the record has them).</param>
     /// <param name="shots">Look at the UI: the game windows are moved off the screen instead of minimized (minimized ones
     /// do not draw) and both are captured every 15 s to <see cref="ShotsDir"/> (host_NNN.png / guest_NNN.png).</param>
-    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false)
+    /// <param name="rejoinSec">The guest quits to the main menu this long into its battle (autopilot "quit"); its dll is to
+    /// take the host's latest save of the battle, Continue by itself and replay on from there (compared from that save).</param>
+    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0)
     {
         differs = true;
         if (GameInstall.AnyRunning) throw new InvalidOperationException("Close every copy of the game first.");
@@ -148,7 +150,7 @@ public static class NetTest
         if (guestPlays) { Directory.CreateDirectory(GuestDir); File.Copy(RecordLog, Path.Combine(GuestDir, "swh2_net_guestplay.log"), true); }
         var account0 = Account() ?? throw new InvalidOperationException("No game saves found.");
         File.WriteAllText(ControlFile, $"autoplay host 127.0.0.1:{port}\n" + (names is [var hostName, ..] ? $"name {hostName}\n" : "") +
-            (late ? $"save {account0.SlotPath(slot)}\n" : ""));   // this PC only: no firewall question
+            (late || rejoinSec > 0 ? $"save {account0.SlotPath(slot)}\n" : ""));   // this PC only: no firewall question
         File.WriteAllLines(AutoScriptFile, DefaultAutoScript(slot));
 
         // The guest: same start save in its own slot, live replay from the host, same autopilot.
@@ -163,7 +165,9 @@ public static class NetTest
             $"slot {guestSlot}\n" +
             (dropSec > 0 ? $"drop {dropSec}\n" : "");
         File.WriteAllText(Path.Combine(GuestDir, "swh2_net.txt"), guestControl);
-        File.WriteAllLines(Path.Combine(GuestDir, "swh2_net_autorun.txt"), DefaultAutoScript(slot));
+        var guestScript = DefaultAutoScript(slot).ToList();
+        if (rejoinSec > 0) guestScript.AddRange(new[] { $"wait {rejoinSec * 1000}", "quit" });
+        File.WriteAllLines(Path.Combine(GuestDir, "swh2_net_autorun.txt"), guestScript);
         sb.AppendLine($"Guest: test start in its slot {slot + 1} ({guestSlot}, what was there kept as .nettest-kept), replays live from 127.0.0.1:{port}.");
 
         string? settings = Windowed();
@@ -246,7 +250,24 @@ public static class NetTest
             if (dropSec > 0)
                 sb.AppendLine($"Connection broken by the test {dropSec} s after connecting: the guest connected again " +
                               $"{ReadShared(GuestReplayedLog).Split('\n').Count(l => l.StartsWith("# net: connected to the host again", StringComparison.Ordinal))} time(s) in the mission.");
-            string record = RecordLog;
+            string record = RecordLog, replayed = GuestReplayedLog;
+            if (rejoinSec > 0)
+            {
+                // Compared from the host's save the guest came back with: the part of its log after the rejoin.
+                var text = ReadShared(GuestReplayedLog);
+                const string mark = "# joining the host's battle from its save (host log byte ";
+                int at = text.LastIndexOf(mark, StringComparison.Ordinal);
+                var lines = text.Split('\n');
+                string Line(string prefix) => lines.FirstOrDefault(l => l.StartsWith(prefix, StringComparison.Ordinal))?.TrimEnd() ?? "(none)";
+                sb.AppendLine($"Rejoin: quit {Line("# quit to the main menu")}; slot {Line("# main menu: the host's save")}; continue {Line("# main menu: Continue")}" +
+                              $"{(lines.Any(l => l.StartsWith("# ERROR: main menu", StringComparison.Ordinal)) ? "; " + Line("# ERROR: main menu") : "")}.");
+                if (at < 0) { sb.AppendLine("Rejoin: the guest did NOT come back into the host's battle."); return sb.ToString().TrimEnd(); }
+                int close = text.IndexOf(')', at);
+                logFrom = long.Parse(text.Substring(at + mark.Length, close - at - mark.Length));
+                replayed = Path.Combine(GuestDir, "swh2_net_replayed_after_rejoin.log");
+                File.WriteAllText(replayed, text.Substring(text.IndexOf('\n', at) + 1));
+                sb.AppendLine($"Rejoin: the guest came back into the host's battle from its save at host log byte {logFrom}.");
+            }
             if (logFrom > 0)
             {
                 // The guest's battle starts at the save: compare the host's record from there on.
@@ -254,7 +275,7 @@ public static class NetTest
                 record = Path.Combine(Dir, "swh2_net_record_from_save.log");
                 File.WriteAllBytes(record, bytes.Skip((int)Math.Min(logFrom, bytes.Length)).ToArray());
             }
-            sb.Append(Compare(out differs, record: record, replayed: GuestReplayedLog));
+            sb.Append(Compare(out differs, record: record, replayed: replayed));
             return sb.ToString().TrimEnd();
         }
         finally { if (settings != null) File.WriteAllText(SettingsFile, settings); ClearControlFiles(); }

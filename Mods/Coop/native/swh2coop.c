@@ -340,6 +340,7 @@ static void AutoStep(void)
         Log("auto: %s %s", cmd, arg);
         if (strcmp(cmd, "wait") == 0) { autoNext = now + (ULONGLONG)atoi(arg); break; }
         if (strcmp(cmd, "enter") == 0) { autoEnterMs = atoi(arg) > 0 ? atoi(arg) : 2500; autoEnterPressed = now; break; }
+        if (strcmp(cmd, "quit") == 0) { NetQuitToMenu(); continue; }
         if (strcmp(cmd, "cutscenes") == 0) { autoCutscenes = strcmp(arg, "on") == 0; continue; }
         if (strcmp(cmd, "popups") == 0) { autoPopups = strcmp(arg, "on") == 0; autoPopupSeen = NetPopupTick(); continue; }
         if (strcmp(cmd, "pad") == 0)

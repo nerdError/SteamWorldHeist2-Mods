@@ -119,6 +119,7 @@ static int ordSeeded;      /* guest, joinedMid: the host's ordinals are in (once
 static wchar_t guestSlotPath[MAX_PATH];
 static char *nextSave;
 static int nextSaveLen, nextEnds, rejoinEnds, rejoinPending;
+static int leftMid;   /* the guest quit to the menu inside the host's battle: it may join that battle again */
 static long long nextFrom, rejoinFrom;
 static void ResetForJoin(int ends);
 static int askedFor;    /* autoplay host: scriptPos + 1 the guest was asked to play */
@@ -1478,6 +1479,7 @@ static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
     {
         /* The battle of the host's save written at the main menu: the replay starts over at that point of the log. */
         rejoinPending = 0;
+        leftMid = 0;
         if (NetTcpRebase(rejoinFrom))
         {
             ResetForJoin(rejoinEnds);
@@ -1717,40 +1719,130 @@ static void ResetForJoin(int ends)
 }
 
 /* ---- the next battle without a restart (guest) ----
- * The game reads its save slots once (0x561ae0 sets 0xea19c1 = loaded); every MainMenuState::OnEnter (vtable 0xbb5588
- * method 1, 0x5ed010) queues "load the slots unless loaded". So: while the guest is not in a battle (after its first
- * one), NetIdle fetches the host's save every few seconds; one from a newer battle of the host is kept. When the main
- * menu opens, it is written into the guest's slot and the flag cleared: the game reads the slots again, Continue loads
- * it, and its battle rebases the replay (HookSceneCreate). */
-typedef ULONG_PTR (*MenuEnter_t)(void *self, void *a2, void *a3, void *a4);
-static MenuEnter_t realMenuEnter;
-#define RVA_MenuEnter 0x5ed010
+ * Quit to the main menu: the pause menu's "Yes" (0x1c1660) fires the signal at +0x428 of the running level, the battle
+ * (GameState+0xc0) or the world map (GameState+0xe8); both connect it to GameState 0xcd030 (fade out, new
+ * MainMenuState). GameState::Update 0xc2080 runs every frame in the game ([GameState+0x110]: 0-1 battle, 2-3 map) and
+ * fires it when asked (NetQuitToMenu), after its own update, as the button does from the UI.
+ * Continue: the profile panel's Continue (0x5f2820) on a slot in use = SetCurrentProfile 0x561d70(slot) + LoadingGame
+ * 0x5eebe0(MainMenuState). The game reads its slots once (0x561ae0, no arguments, sets 0xea19c1 = loaded): the main
+ * menu's update (MainMenuState vtable 0xbb5588 slot 4, 0x5ee040) writes the host's save into the guest's slot, reads
+ * the slots again and presses Continue on it a moment later; its battle rebases the replay (HookSceneCreate).
+ * When: while the guest is not in a battle (after its first one), NetIdle fetches the host's save every few seconds;
+ * one from a newer battle of the host is kept and the guest goes to the main menu by itself. A guest that left inside
+ * the host's battle (pause, Quit; HookQuit) takes the host's latest save of that battle too. */
+typedef ULONG_PTR (*GameUpdate_t)(void *game, void *dt);
+typedef ULONG_PTR (*Quit_t)(void *game, void *a2, void *a3, void *a4);
+typedef ULONG_PTR (*MenuUpdate_t)(void *menu, void *dt);
+typedef void (*FireSignal_t)(void *signal);
+typedef void (*SetProfile_t)(int slot);
+typedef unsigned char (*LoadingGame_t)(void *menu);
+typedef void (*LoadSlots_t)(void);
+static GameUpdate_t realGameUpdate;
+static Quit_t realQuit;
+static MenuUpdate_t realMenuUpdate;
+#define RVA_GameUpdate 0xc2080
+#define RVA_Quit 0xcd030
+#define RVA_MenuUpdate 0x5ee040
+#define RVA_FireSignal 0xcfb10
+#define RVA_SetProfile 0x561d70
+#define RVA_LoadingGame 0x5eebe0
+#define RVA_LoadSlots 0x561ae0
 #define RVA_SlotsLoaded 0xea19c1
+static int quitWanted, quitFired;
+static ULONGLONG menuSince, continueAt;
 
-static ULONG_PTR HookMenuEnter(void *self, void *a2, void *a3, void *a4)
+void NetQuitToMenu(void)
 {
-    if (nextSave && guestSlotPath[0])
+    if (!realGameUpdate) { NetLog("# ERROR: quit to the main menu: hook not installed"); return; }
+    quitWanted = 1;
+    quitFired = 0;
+    NetLog("# asked to quit to the main menu");
+}
+
+static ULONG_PTR HookGameUpdate(void *game, void *dt)
+{
+    ULONG_PTR r = realGameUpdate(game, dt);
+    menuSince = 0;
+    DWORD fire = ExeRva(RVA_FireSignal);
+    if (quitWanted && !quitFired && fire)
+    {
+        char *g = (char *)game;
+        int level = *(int *)(g + 0x110);
+        char *obj = level >= 0 && level <= 3 ? *(char **)(g + (level >= 2 ? 0xe8 : 0xc0)) : NULL;
+        if (obj)
+        {
+            quitFired = 1;
+            NetLog("# quit to the main menu from the %s", level >= 2 ? "world map" : "battle");
+            ((FireSignal_t)(base + fire))(obj + 0x428);
+        }
+    }
+    return r;
+}
+
+static ULONG_PTR HookQuit(void *game, void *a2, void *a3, void *a4)
+{
+    quitWanted = 0;
+    if (me == 2 && worldTick && GetTickCount64() - worldTick < 2000)
+    {
+        leftMid = 1;
+        NetLog("# guest: left the battle for the main menu: Continue there joins the host's battle again");
+    }
+    return realQuit(game, a2, a3, a4);
+}
+
+/* The guest's slot index (0-based) from its file name savegame_NNN.dat, -1 = not one. */
+static int GuestSlotIndex(void)
+{
+    const wchar_t *p = wcsstr(guestSlotPath, L"savegame_");
+    int n = -1;
+    return p && swscanf(p + 9, L"%d", &n) == 1 ? n : -1;
+}
+
+static ULONG_PTR HookMenuUpdate(void *menu, void *dt)
+{
+    ULONG_PTR r = realMenuUpdate(menu, dt);
+    ULONGLONG now = GetTickCount64();
+    if (!menuSince) menuSince = now;
+    quitWanted = 0;
+    DWORD flag = ExeRva(RVA_SlotsLoaded), load = ExeRva(RVA_LoadSlots);
+    /* Once the game has read its slots itself (the menu's own job), a moment into the menu. */
+    if (nextSave && guestSlotPath[0] && flag && load && base[flag] && now - menuSince > 1000)
     {
         FILE *f = _wfopen(guestSlotPath, L"wb");
         int ok = f && fwrite(nextSave, 1, nextSaveLen, f) == (size_t)nextSaveLen;
         if (f) fclose(f);
-        DWORD flag = ExeRva(RVA_SlotsLoaded);
-        if (ok && flag)
+        if (ok)
         {
             wchar_t backup[MAX_PATH + 8];
             _snwprintf(backup, MAX_PATH + 8, L"%s.backup", guestSlotPath);
             DeleteFileW(backup);
-            base[flag] = 0;   /* the game reads the slots again (its job queued by this OnEnter) */
+            ((LoadSlots_t)(base + load))();
             rejoinFrom = nextFrom;
             rejoinEnds = nextEnds;
             rejoinPending = 1;
-            NetLog("# main menu: the host's save from its battle (host log byte %lld) is in this game's slot: Continue joins it", nextFrom);
+            continueAt = now + 1500;
+            NetLog("# main menu: the host's save from its battle (host log byte %lld) is in this game's slot %d", nextFrom, GuestSlotIndex() + 1);
         }
         else NetLog("# ERROR: main menu: the host's save could not be written to the slot");
         free(nextSave);
         nextSave = NULL;
     }
-    return realMenuEnter(self, a2, a3, a4);
+    if (continueAt && now >= continueAt)
+    {
+        continueAt = 0;
+        unsigned char *m = (unsigned char *)menu;
+        int slot = GuestSlotIndex();
+        DWORD set = ExeRva(RVA_SetProfile), go = ExeRva(RVA_LoadingGame);
+        if (slot < 0 || !set || !go) NetLog("# ERROR: main menu: no slot / game addresses for Continue: Continue by hand");
+        else if (m[0xa0] || m[0xa2]) NetLog("# main menu: a game is loading already");
+        else
+        {
+            ((SetProfile_t)(base + set))(slot);
+            NetLog(((LoadingGame_t)(base + go))(menu) ? "# main menu: Continue on slot %d (the host's battle)"
+                                                      : "# ERROR: main menu: slot %d can't be loaded: Continue by hand", slot + 1);
+        }
+    }
+    return r;
 }
 
 void NetIdle(void)
@@ -1769,14 +1861,19 @@ void NetIdle(void)
     if (NetTcpFetchTake(&data, &len, &from, &ends, &battle) == 1)
     {
         long long seen = NetTcpBase() + scriptOffset;   /* host log bytes this guest has played */
-        if (battle && from > seen && from > nextFrom)
+        if (battle && from > nextFrom && (from > seen || leftMid))
         {
             free(nextSave);
             nextSave = data;
             nextSaveLen = len;
             nextFrom = from;
             nextEnds = ends;
-            NetLog("# the host is in its next battle (its save at host log byte %lld): main menu, then Continue, joins it", from);
+            if (leftMid) NetLog("# the host's save from its battle (host log byte %lld): Continue joins it", from);
+            else
+            {
+                NetLog("# the host is in its next battle (its save at host log byte %lld): to the main menu, Continue joins it", from);
+                if (!menuSince) NetQuitToMenu();
+            }
         }
         else free(data);
     }
@@ -1993,10 +2090,14 @@ void NetInstall(char *exeBase, const wchar_t *dir)
         if (!realSlotUpdate) NetLog("# ERROR: party slot hook not installed: no owner colours on the portraits");
         if (me == 2)
         {
-            static const unsigned char menuEnter[] = { 0x48,0x8b,0xc4,0x55,0x57,0x41,0x56,0x48,0x8d,0x68,0xa1,0x48,0x81,0xec,0xe0,0x00,0x00,0x00 };
-            realMenuEnter = (MenuEnter_t)InlineHook(RVA_MenuEnter, menuEnter, sizeof menuEnter, (void *)HookMenuEnter);
-            NetLog(realMenuEnter ? "# guest: the next battle joins without a restart (main menu, Continue)"
-                                 : "# ERROR: guest: main menu hook not installed: restart the game for the next battle");
+            static const unsigned char gameUpdate[] = { 0x48,0x8b,0xc4,0x56,0x57,0x41,0x56,0x48,0x81,0xec,0x30,0x05,0x00,0x00 };
+            static const unsigned char quit[] = { 0x4c,0x8b,0xdc,0x53,0x48,0x83,0xec,0x50,0x49,0xc7,0x43,0xd8,0xfe,0xff,0xff,0xff };
+            static const unsigned char menuUpdate[] = { 0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0x6c,0x24,0xc0 };
+            realGameUpdate = (GameUpdate_t)InlineHook(RVA_GameUpdate, gameUpdate, sizeof gameUpdate, (void *)HookGameUpdate);
+            realQuit = (Quit_t)InlineHook(RVA_Quit, quit, sizeof quit, (void *)HookQuit);
+            realMenuUpdate = (MenuUpdate_t)InlineHook(RVA_MenuUpdate, menuUpdate, sizeof menuUpdate, (void *)HookMenuUpdate);
+            NetLog(realGameUpdate && realQuit && realMenuUpdate ? "# guest: the next battle joins without a restart (to the main menu, Continue: by itself)"
+                                                                : "# ERROR: guest: main menu hooks not installed: restart the game for the next battle");
         }
     }
     realRequestAction = (RequestAction_t)InlineHook(RVA_RequestAction, requestAction, sizeof requestAction, (void *)HookRequestAction);
