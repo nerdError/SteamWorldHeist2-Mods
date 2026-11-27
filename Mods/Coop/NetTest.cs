@@ -140,9 +140,14 @@ public static class NetTest
     /// which plays them (logged <c>by=guest</c>; the host waits for them where the record has them).</param>
     /// <param name="shots">Look at the UI: the game windows are moved off the screen instead of minimized (minimized ones
     /// do not draw) and both are captured every 15 s to <see cref="ShotsDir"/> (host_NNN.png / guest_NNN.png).</param>
+    /// <param name="desyncSec">This long into the guest's battle the guest alone gets the CheatMenu cheat "kill" (every enemy
+    /// dies there, not at the host): its next state correction finds them missing, and its dll is to rejoin the host's
+    /// battle from its save (hard correction).</param>
+    /// <param name="checkpointSec">The host loads its checkpoint this long after its game starts (autopilot "checkpoint" =
+    /// the pause menu's Load checkpoint): its dll asks for a save, the guest's is to quit and join from it.</param>
     /// <param name="rejoinSec">The guest quits to the main menu this long into its battle (autopilot "quit"); its dll is to
     /// take the host's latest save of the battle, Continue by itself and replay on from there (compared from that save).</param>
-    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0, int afterSec = 0, bool next = false, bool mapQuit = false, int winSec = 0)
+    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0, int afterSec = 0, bool next = false, bool mapQuit = false, int winSec = 0, int desyncSec = 0, int checkpointSec = 0)
     {
         differs = true;
         if (GameInstall.AnyRunning) throw new InvalidOperationException("Close every copy of the game first.");
@@ -155,7 +160,7 @@ public static class NetTest
         if (guestPlays) { Directory.CreateDirectory(GuestDir); File.Copy(RecordLog, Path.Combine(GuestDir, "swh2_net_guestplay.log"), true); }
         var account0 = Account() ?? throw new InvalidOperationException("No game saves found.");
         File.WriteAllText(ControlFile, $"autoplay host 127.0.0.1:{port}\n" + (names is [var hostName, ..] ? $"name {hostName}\n" : "") +
-            (late || rejoinSec > 0 || next || mapQuit ? $"save {account0.SlotPath(slot)}\n" : ""));   // this PC only: no firewall question
+            (late || rejoinSec > 0 || desyncSec > 0 || checkpointSec > 0 || next || mapQuit ? $"save {account0.SlotPath(slot)}\n" : ""));   // this PC only: no firewall question
         // --next: after the lost mission the host loads the checkpoint (its battle again, a new save there), the guest goes
         // to the world map: its dll is to see the host's new battle, quit to the main menu from the map and Continue into it.
         var hostScript = DefaultAutoScript(slot).ToList();
@@ -163,6 +168,7 @@ public static class NetTest
         string[] toMap = winSec > 0 ? new[] { "over", "cutscenes off", "popups off", "wait 6000", "key return", "wait 3000", "key return", "wait 3000", "key return", "wait 3000", "key return" }
                                     : new[] { "over", "cutscenes off", "popups off", "wait 8000", "key down", "wait 800", "key return" };
         if (mapQuit) hostScript.AddRange(toMap);
+        if (checkpointSec > 0) hostScript.AddRange(new[] { $"wait {checkpointSec * 1000}", "checkpoint" });
         // --next (with --win): both go to the world map; the host's ship stands at the next mission's marker, Return enters it
         // (its game saves there, held until the guest comes); the guest's dll is to quit to the main menu and Continue into it.
         // --next: the host goes straight into its next battle (CheatMenu "mission", the game's ChangeMission) while the
@@ -225,7 +231,7 @@ public static class NetTest
             string end = "timeout";
             int shot = 0;
             DateTime? inAt = null;   // --win: the guest entered the battle (the cheat goes to both that long after)
-            bool winSent = false;
+            bool winSent = false, desyncSent = false;
             DateTime? overAt = null;   // the guest's mission over: the games run afterSec more (screens after a battle)
             var lastShot = DateTime.Now;
             if (shots) { Directory.CreateDirectory(ShotsDir); foreach (var f in Directory.GetFiles(ShotsDir, "*.png")) File.Delete(f); }
@@ -242,8 +248,14 @@ public static class NetTest
                 string log = GuestReplayedLog;
                 long size = File.Exists(log) && File.GetLastWriteTime(log) >= started ? new FileInfo(log).Length : 0;
                 if (size != lastSize) { lastSize = size; lastChange = DateTime.Now; }
-                if (winSec > 0 && size > 0 && inAt == null && ReadShared(log).Contains("# to host: ready")) inAt = DateTime.Now;
-                if (inAt != null && !winSent && (DateTime.Now - inAt.Value).TotalSeconds >= winSec)
+                if ((winSec > 0 || desyncSec > 0) && size > 0 && inAt == null && ReadShared(log).Contains("# to host: ready")) inAt = DateTime.Now;
+                if (inAt != null && desyncSec > 0 && !desyncSent && (DateTime.Now - inAt.Value).TotalSeconds >= desyncSec)
+                {
+                    desyncSent = true;
+                    File.AppendAllText(Path.Combine(GuestDir, "swh2_cheats_cmd.txt"), $"{DateTime.UtcNow:HHmmssfff} {DateTimeOffset.UtcNow.ToUnixTimeSeconds()} kill\n");
+                    sb.AppendLine($"Cheat \"kill\" sent to the guest only {desyncSec} s into the battle.");
+                }
+                if (inAt != null && winSec > 0 && !winSent && (DateTime.Now - inAt.Value).TotalSeconds >= winSec)
                 {
                     winSent = true;
                     foreach (var (dir, cheat) in new[] { (Dir, next ? "mission " + NextMission : "win"), (GuestDir, "win") })
@@ -282,7 +294,7 @@ public static class NetTest
                 sb.AppendLine($"Connection broken by the test {dropSec} s after connecting: the guest connected again " +
                               $"{ReadShared(GuestReplayedLog).Split('\n').Count(l => l.StartsWith("# net: connected to the host again", StringComparison.Ordinal))} time(s) in the mission.");
             string record = RecordLog, replayed = GuestReplayedLog;
-            if (rejoinSec > 0 || next)
+            if (rejoinSec > 0 || desyncSec > 0 || checkpointSec > 0 || next)
             {
                 // Compared from the host's save the guest came back with: the part of its log after the rejoin.
                 var text = ReadShared(GuestReplayedLog);

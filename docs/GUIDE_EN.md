@@ -49,6 +49,7 @@ How to use
 4. Click "Apply to game". The loader backs up the original game files
    and builds the game with the selected mods. The log is at the bottom.
 5. Start the game with the "▶ Play" button or from Steam as usual.
+   The main menu lists the applied mods with their versions at the bottom right.
 
 To change mods or settings: close the game, change the ticks, "Apply to game" again.
 Every Apply rebuilds the game from the originals, so changes never stack on top of each other.
@@ -89,6 +90,9 @@ Randomizer
 Turbo
   - Speeds up enemy turns (default x3) and the enemy/reinforcement intros (x6). Multipliers are in the settings;
     your own turn can be sped up too ("Your turn speed", off by default).
+  - The three speeds are also sliders in the game: Options → Game, at the bottom (setting "Sliders in the game's
+    Options menu", on by default). The loader's values are the starting values; once you move a slider in the
+    game, the game keeps its own value.
   - Patches the game exe, works with the current Steam and GOG versions (the loader checks it).
 
 QuickStart

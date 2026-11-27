@@ -7,7 +7,7 @@ NE Turbo Battles
 
 ## Description (plain text, max 350 characters)
 ```text
-Less waiting in SteamWorld Heist 2 battles: enemy turns run faster (default x3) and so does the camera showing enemies, turrets and reinforcements (default x6). Your own turn, cutscenes and dialogue stay at normal speed. Both speeds are adjustable.
+Less waiting in SteamWorld Heist 2 battles: enemy turns run faster (default x3) and so does the camera showing enemies, turrets and reinforcements (default x6). Your own turn, cutscenes and dialogue stay at normal speed. Speeds are adjustable, also in the game's Options.
 ```
 
 ## Tags
@@ -33,14 +33,15 @@ NE Turbo Battles cuts the waiting in SteamWorld Heist 2 battles. Enemy turns and
 [list]
 [*][b]Enemy turns[/b] run faster — default x3, adjustable from x1 to x8.
 [*][b]Enemy, turret and reinforcement intros[/b] run faster — default x6, adjustable from x1 to x10.
-[*][b]Your turn, cutscenes and dialogue[/b] stay at normal speed.
+[*][b]Your turn, cutscenes and dialogue[/b] stay at normal speed (your turn can be sped up too, up to x8).
+[*][b]Sliders in the game[/b] — the speeds are also in the game's own Options → Game menu and change right away, even mid-battle.
 [*]Safe: the loader keeps a backup of the original exe, checks the game version before patching and rebuilds from the backup on every install. On an unknown game build the mod refuses to install instead of breaking anything.
 [/list]
 Known limitation: during enemy turns all animations speed up together (hats, idle animations) — the engine has a single clock.
 
 [size=5][b]Requirements[/b][/size]
 [list]
-[*][b]NE Mod Loader & Manager[/b] 1.0 or newer.
+[*][b]NE Mod Loader & Manager[/b] 1.3 or newer.
 [*]The current Steam version of SteamWorld Heist 2 (the mod patches the game exe).
 [/list]
 Works together with my other mods. Source code: [url=https://github.com/nerdError/SteamWorldHeist2-Mods]GitHub[/url].

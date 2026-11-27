@@ -30,6 +30,7 @@ public static class Pipeline
         ExeImage? exe = null;
         ExeImage Exe() => exe ??= new ExeImage(files.ReadOriginalExe());
 
+        var options = new GameOptions();
         var reports = new List<(ModManifest Mod, ModContext Ctx)>();
         var summary = new List<string>();
         foreach (var mod in mods)
@@ -43,7 +44,7 @@ public static class Pipeline
             if (exe != null) exe.CurrentOwner = mod.Id;
             ApplyLooseFiles(content, mod, log);
 
-            var ctx = new ModContext(mod, settings, content, () => { var e = Exe(); e.CurrentOwner = mod.Id; return e; }, s => log("  " + s));
+            var ctx = new ModContext(mod, settings, content, () => { var e = Exe(); e.CurrentOwner = mod.Id; return e; }, s => log("  " + s), options);
             if (mod.Plugin != null)
             {
                 try { ModCatalog.LoadPlugin(mod).Apply(ctx); }
@@ -57,6 +58,8 @@ public static class Pipeline
             summary.Add(details.Length > 0 ? $"{mod.Title} ({details})" : mod.Title);
         }
         content.CurrentOwner = null;
+        if (mods.Count > 0) AddMainMenuModList(content, mods);
+        options.Install(content, () => { var e = Exe(); e.CurrentOwner = "ModLoader"; return e; }, log);
         foreach (var (path, owners) in content.SharedFiles)
             log($"Note: {path} changed by {string.Join(" + ", owners)} (edits combined).");
 
@@ -96,6 +99,34 @@ public static class Pipeline
         log(total == 0 && exeBytes == null
             ? "Nothing to change — game files are original."
             : $"Done: {total} file(s) changed{(exeBytes != null ? ", exe patched" : "")}. Start a NEW save to see every change.");
+    }
+
+    /// <summary>
+    /// The enabled mods (name + version) in medium text at the bottom right of the main menu: a panel inserted into the
+    /// "main" panel of the ui.me template main_menu_start (fades with the buttons). Text insert, the rest of ui.me stays as it is.
+    /// </summary>
+    static void AddMainMenuModList(GameContent content, IReadOnlyList<ModManifest> mods)
+    {
+        const string file = "UI/ui.me";
+        var xml = content.ReadText(file);
+        int template = xml.IndexOf("Name=\"main_menu_start\"", StringComparison.Ordinal);
+        int main = template < 0 ? -1 : xml.IndexOf("Name=\"main\"", template, StringComparison.Ordinal);
+        int open = main < 0 ? -1 : xml.IndexOf('>', main) + 1;
+        if (open <= 0 || xml.IndexOf("</Template>", template, StringComparison.Ordinal) < open)
+            throw new InvalidOperationException($"{file}: main menu layout not found.");
+        static string Esc(string s) => System.Security.SecurityElement.Escape(s);
+        var indent = "\r\n\t\t\t\t\t\t";
+        var labels = new[] { "Mods:" }.Concat(mods.Select(m => m.Title)).Select((t, i) =>
+            $"{indent}<Label Name=\"modloader_mod_{i}\" Text=\"{Esc(t)}\" Style=\"ModLoaderModListLabel\" Anchor=\"East\" Width=\"1400\" Height=\"75\" />");
+        var panel = $"\r\n\t\t\t\t\t<Panel Name=\"modloader_mods\" Anchor=\"SouthEast\" Margins=\"auto auto 30 30\" LayoutChildren=\"flow-vertical\">" +
+                    string.Concat(labels) + "\r\n\t\t\t\t\t</Panel>";
+        // One size up from the options' version label: body_medium_drop (like the options' items), right-aligned.
+        const string style = "<Style Name=\"ModLoaderModListLabel\">\r\n\t\t\t<Font></Font>\r\n\t\t\t<TextSettings>label_generic_drop</TextSettings>\r\n" +
+                             "\t\t\t<ContentAlignment>ne</ContentAlignment>\r\n\t\t</Style>\r\n\t\t";
+        int styles = xml.IndexOf("<Style Name=\"OptionsMenuVersionLabelStyle\">", StringComparison.Ordinal);
+        if (styles < 0 || styles > template) throw new InvalidOperationException($"{file}: OptionsMenuVersionLabelStyle not found.");
+        xml = xml.Insert(open, panel).Insert(styles, style);   // back to front: offsets stay valid
+        content.WriteText(file, xml, bom: content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
     }
 
     /// <summary>

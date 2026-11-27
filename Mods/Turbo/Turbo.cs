@@ -40,8 +40,9 @@ public sealed class TurboMod : IModPlugin
     public void Apply(ModContext ctx)
     {
         float enemy = ctx.Settings.Float("enemySpeed"), intro = ctx.Settings.Float("introSpeed"), player = ctx.Settings.Float("playerSpeed");
+        bool inGame = ctx.Settings.Bool("inGame");
         var exe = ctx.Exe;
-        uint va = exe.AddSection(".swh2", 0x1000);
+        uint va = exe.Alloc(0x400);   // shared code section (writable: the prologue writes the floats); ~0x2c4 used
         uint hook = exe.Map(HookRva);
 
         // Code, then the floats enemy / intro / player, then the player stub.
@@ -58,9 +59,36 @@ public sealed class TurboMod : IModPlugin
         HookOriginal.CopyTo(blob, stub + 8);                                                         // movss [rdx+0x1b70], xmm1
         ExeImage.Jmp(va + (uint)stub + 16, hook + 8).CopyTo(blob, stub + 16);                         // back after the hook
         exe.Write(va, blob);
-        exe.Patch(hook, HookOriginal, [.. ExeImage.Jmp(hook, va), 0x90, 0x90, 0x90]);
 
-        ctx.Summary = $"enemy turns ×{enemy:0.##}, intros ×{intro:0.##}" + (player != 1 ? $", your turn ×{player:0.##}" : "");
+        // In-game sliders (Options → Game): a prologue reads them every frame into the three floats, then runs the code.
+        uint entry = va;
+        if (inGame)
+        {
+            var speeds = new[] { ("EnemySpeed", enemy, 8f, "Turbo: enemy turn speed", "Turbo: скорость хода врагов"),
+                                 ("IntroSpeed", intro, 10f, "Turbo: enemy/turret intro speed", "Turbo: скорость показа врагов и турелей"),
+                                 ("PlayerSpeed", player, 8f, "Turbo: your turn speed", "Turbo: скорость своего хода") };
+            var a = new X64(va + (uint)blob.Length);
+            a.PushVolatile().SubRsp(0x98);                   // the hook site's rsp is 16-aligned: 7 pushes + 0x98 keep it so
+            for (int x = 0; x < 6; x++) a.SaveXmm(x, 0x30 + 16 * x);
+            for (int s = 0; s < speeds.Length; s++)
+            {
+                var (name, value, max, label, labelRu) = speeds[s];
+                string key = ctx.Options.Slider(name, (Math.Min(value, max) - 1) / (max - 1), 0.5f / (max - 1), label,
+                    $"Left = normal speed (×1), right = ×{max:0}. Steps of ×0.5.", labelRu, $"Слева — обычная скорость (×1), справа — ×{max:0}. Шаг ×0,5.");
+                GameOptions.EmitReadFloat(a, exe, $"key{s}", key);
+                a.MulssXmm0($"scale{s}").AddssXmm0("one").StoreXmm0(va + (uint)(Code.Length + 4 * s));   // 1 + v·(max−1)
+            }
+            for (int x = 0; x < 6; x++) a.LoadXmm(x, 0x30 + 16 * x);
+            a.AddRsp(0x98).PopVolatile().Jmp(va);
+            a.Align(4).Label("one").Float(1);
+            for (int s = 0; s < speeds.Length; s++) a.Label($"scale{s}").Float(speeds[s].Item3 - 1);
+            for (int s = 0; s < speeds.Length; s++) a.Label($"key{s}").Ascii(ctx.Options.KeyFor(speeds[s].Item1));
+            entry = a.Origin;
+            exe.Write(a.Origin, a.ToArray());
+        }
+        exe.Patch(hook, HookOriginal, [.. ExeImage.Jmp(hook, entry), 0x90, 0x90, 0x90]);
+
+        ctx.Summary = $"enemy turns ×{enemy:0.##}, intros ×{intro:0.##}" + (player != 1 ? $", your turn ×{player:0.##}" : "") + (inGame ? ", sliders in the game's Options" : "");
         ctx.Log($"Turbo: {ctx.Summary} (code at {va:X}).");
     }
 }

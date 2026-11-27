@@ -74,6 +74,7 @@ function C.Enter(script)
 	local f = io.open(file(BLOCKED), "r")
 	if f then lastBlocked = f:read("*l"); f:close() end
 	C.netLog = nil
+	C.netCleared = false   -- netplay status counters of this battle not removed yet
 	C.netCrewList, C.netPersona, C.netRole = {}, {}, nil
 	netOwners = {}
 	if os and os.remove then os.remove(file("swh2_net_crew.txt")) end
@@ -134,7 +135,7 @@ function C.netFix(E)
 	-- A live guest's record grows while the battle runs (the host streams it): read it again for a newer state.
 	if not rec or not rec.states[n] then loadRecord() end
 	local want = rec.states[n]
-	local moved, healed, killed, missing = 0, 0, 0, 0
+	local moved, healed, killed, missing, lost = 0, 0, 0, 0, nil
 	if want then
 		local localOf = {}   -- record id -> local id
 		for id, o in pairs(rec.ord) do if nums[o + 2] then localOf[id] = nums[o + 2] end end
@@ -171,6 +172,7 @@ function C.netFix(E)
 		if next(keep) == nil then
 			C.netWrite("# FIX " .. n .. ": no actor of the record found here, nothing corrected")
 			alive = {}
+			lost = 0
 		end
 		for lid, a in pairs(alive) do
 			if not keep[lid] then
@@ -184,8 +186,10 @@ function C.netFix(E)
 	end
 	C.netWrite(string.format("fix %d moved=%d health=%d killed=%d missing=%d", n, moved, healed, killed, missing))
 	lastFix = line
+	-- "<state> <missing>": actors alive at the host but gone here can't be brought back — the dll rejoins the host's
+	-- battle from its save (hard correction).
 	f = io.open(file(SYNCED), "w")
-	if f then f:write(n, "\n"); f:close() end
+	if f then f:write(n, " ", lost or missing, "\n"); f:close() end
 end
 
 -- Netplay test: "a dialogue / camera sequence is on" for the dll autopilot (swh2coop.c "cutscenes on" presses Return
@@ -218,12 +222,23 @@ end
 -- The dll writes swh2_net_status.txt twice a second: "<host|guest> <waiting|connected|closed|failed> <host's crewmates
 -- with action points> <guest's>". E = { AddManualCounter, RemoveCounter, player = is it the player's turn }.
 local STATUS, shown = "swh2_net_status.txt", {}
+-- Manual counters are saved with the mission: a guest that loaded the host's in-battle save got the host's status line
+-- too. The first update in a battle removes every netplay counter (removing a missing one does nothing).
+local NET_COUNTERS = { "host_waiting", "host_connected", "host_closed", "host_failed", "host_joining", "guest_waiting",
+	"guest_connected", "guest_closed", "guest_failed", "turn_both", "turn_p1", "turn_p2", "turn_enemy" }
 local function showCounter(slot, name, E)
 	if shown[slot] == name then return end
 	if shown[slot] then E.RemoveCounter(shown[slot]) end
 	shown[slot] = name
 	if name then E.AddManualCounter(name, 0) end
 end
+-- Not a network game: the netplay counters of a save from one are removed once.
+function C.netClearStatus(RemoveCounter)
+	if C.netCleared then return end
+	C.netCleared = true
+	for _, n in ipairs(NET_COUNTERS) do RemoveCounter("coop_net_" .. n) end
+end
+
 function C.netStatus(E)
 	local f = io.open(file(STATUS), "r")
 	if not f then return end
@@ -231,6 +246,10 @@ function C.netStatus(E)
 	f:close()
 	local role, conn, hostLeft, guestLeft = (line or ""):match("^(%a+) (%a+) (%d+) (%d+)")
 	if not role then return end
+	if not C.netCleared then
+		C.netCleared = true
+		for _, n in ipairs(NET_COUNTERS) do E.RemoveCounter("coop_net_" .. n) end
+	end
 	if C.netRole ~= role then
 		C.netRole = role
 		C.netWrite("# network role " .. role .. " (owners from the split)")

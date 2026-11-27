@@ -1,14 +1,16 @@
 {
   "id": "Turbo",
   "name": "NE Turbo Battles",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "nerderror",
   "description": "Speeds up the waiting in battles: enemy turns and the camera showing enemies, turrets and reinforcements. Optionally your own turn too. Cutscenes and dialogue stay at normal speed. Patches the game exe (current Steam and GOG versions).",
   "plugin": "SWH2.Mod.Turbo.dll",
   "order": 300,
-  "minLoaderVersion": "1.2.0",
+  "minLoaderVersion": "1.3.0",
   "patchesExe": true,
   "settings": [
+    { "id": "inGame", "type": "bool", "label": "Sliders in the game's Options menu", "default": true,
+      "help": "Options → Game in the game gets the three speeds as sliders. The values here are only the starting values: once you move a slider in the game, the game keeps its own value." },
     { "id": "enemySpeed", "type": "float", "label": "Enemy turn speed ×", "default": 3, "min": 1, "max": 8, "step": 0.5 },
     { "id": "introSpeed", "type": "float", "label": "Enemy/turret/reinforcement intro speed ×", "default": 6, "min": 1, "max": 10, "step": 0.5 },
     { "id": "playerSpeed", "type": "float", "label": "Your turn speed ×", "default": 1, "min": 1, "max": 8, "step": 0.5,

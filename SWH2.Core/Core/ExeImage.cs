@@ -46,7 +46,7 @@ public sealed class ExeImage
     public string CurrentOwner { get; set; } = "?";
     public bool Modified => _patched.Count > 0 || _added.Count > 0;
     public byte[] ToArray() => (byte[])_data.Clone();
-    public IEnumerable<string> Owners => _patched.Select(p => p.Owner).Concat(_added.Select(a => a.Owner)).Distinct();
+    public IEnumerable<string> Owners => _patched.Select(p => p.Owner).Concat(_added.Select(a => a.Owner)).Where(o => o != "(shared)").Distinct();
 
     // ---- PE layout ----------------------------------------------------------------------
 
@@ -134,7 +134,34 @@ public sealed class ExeImage
         return rva;
     }
 
-    /// <summary>Writes into a section this mod added with <see cref="AddSection"/>.</summary>
+    /// <summary>Name, size and characteristics (code | execute | read | write) of the section <see cref="Alloc"/> shares out.</summary>
+    public const string SharedSection = ".mods";
+    public const int SharedSize = 0x10000;
+    public const uint SectionCodeData = 0xE0000020;
+    uint _sharedRva, _sharedUsed;
+
+    /// <summary>
+    /// Room for code and data in one section all mods share (the exe has room for only two more section headers, so
+    /// prefer this over <see cref="AddSection"/>). Zero-filled, executable and writable (code may keep its own variables
+    /// there); 16-byte aligned. The block belongs to the current mod: fill it with <see cref="Write"/>.
+    /// </summary>
+    public uint Alloc(int size)
+    {
+        if (_sharedRva == 0)
+        {
+            var owner = CurrentOwner;
+            CurrentOwner = "(shared)";
+            _sharedRva = AddSection(SharedSection, SharedSize, SectionCodeData);
+            CurrentOwner = owner;
+        }
+        uint at = _sharedRva + (_sharedUsed + 15) / 16 * 16;
+        if (at + size > _sharedRva + SharedSize) throw new InvalidOperationException($"{CurrentOwner}: the shared code section is full.");
+        _sharedUsed = at + (uint)size - _sharedRva;
+        _added.Add((at, at + (uint)size, CurrentOwner));
+        return at;
+    }
+
+    /// <summary>Writes into a section this mod added with <see cref="AddSection"/> or a block from <see cref="Alloc"/>.</summary>
     public void Write(uint rva, ReadOnlySpan<byte> bytes)
     {
         uint end = rva + (uint)bytes.Length;

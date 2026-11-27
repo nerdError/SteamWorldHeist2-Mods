@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.MapCoop</AssemblyName>
+    <RootNamespace>SWH2.Mods.MapCoop</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="native\**" />
+  </ItemGroup>
+
+  <!-- World map netplay: native dll the game loads itself (exe patch), built with the Visual Studio C++ tools.
+       Shares the Steam/GOG address map with Coop (Mods/Coop/native/exemap.c, map_gog.h). -->
+  <Target Name="BuildMapDll" AfterTargets="Build" Inputs="native\swh2map.c;native\build.cmd;..\Coop\native\exemap.c;..\Coop\native\map_gog.h" Outputs="$(OutDir)swh2map.dll">
+    <Exec Command="&quot;$(MSBuildProjectDirectory)\native\build.cmd&quot; &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;" />
+  </Target>
+
+</Project>

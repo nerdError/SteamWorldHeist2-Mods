@@ -38,11 +38,12 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
 $cache = Join-Path $root 'obj\package'
-$mods = 'Randomizer', 'Turbo', 'Challenges', 'CheatMenu', 'MoreSlots', 'Coop', 'RemoteCoop', 'QuickStart'
+$mods = 'Randomizer', 'Turbo', 'Challenges', 'CheatMenu', 'MoreSlots', 'Coop', 'RemoteCoop', 'QuickStart', 'MapCoop'
 # Inputs of a mod outside its own folder (they go into its source hash).
 $modSources = @{
     'Coop' = @('Mods\Challenges\MissionScripts.cs')
     'RemoteCoop' = @('Mods\Challenges\MissionScripts.cs', 'Mods\Coop\CoopShared.cs', 'Mods\Coop\Lua', 'Mods\Coop\native')
+    'MapCoop' = @('Mods\Coop\native\exemap.c', 'Mods\Coop\native\map_gog.h', 'Mods\Coop\native\netplay.h')
 }
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 New-Item -ItemType Directory -Force (Join-Path $dist 'nexus') | Out-Null

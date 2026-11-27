@@ -1,0 +1,13 @@
+{
+  "id": "MapCoop",
+  "name": "NE Map Co-op (network, experimental)",
+  "version": "0.1.0",
+  "author": "nerderror",
+  "description": "Work in progress: the second player watches the host's world map over the network (each player runs their own copy of the game). Separate from NE Co-op (network) for now, works next to it. Patches the game exe (current Steam and GOG versions).",
+  "plugin": "SWH2.Mod.MapCoop.dll",
+  "order": 260,
+  "minLoaderVersion": "1.2.0",
+  "patchesExe": true,
+  "command": "maptest",
+  "settings": []
+}

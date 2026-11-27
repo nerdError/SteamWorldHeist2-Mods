@@ -141,6 +141,21 @@
   («saving is disabled… disableSave cheat»). Lua `SaveCheckpoint()` (тактика, `0x3273f0`) — другое: запрос
   в `state+0xf08` → `0xcfb10`; такие чекпоинты попап провала грузит сам (`0x3ac69d`, `+0xf68`).
 
+## Меню настроек (моды в Options → Game, 2026-11-27)
+- Тексты пунктов — id строк (`ui_option_*`, `Language/*.csv`), значения — ключи `Definitions/settings.xml`; игра
+  сама сохраняет их в `%APPDATA%\Thunderful\SteamWorld Heist II\settings.xml` (вкл. новые ключи из settings.xml пака).
+- `OptionsMenu::BuildCategory(menu, category)` `0x58fae0`: switch по категории @ `0x58fb69` (`test edi, edi; je 0x5904a4`):
+  0 = Игра (`0x5904a4`), 1 = Звук (`0x5901a9`), 2 = Графика (`0x58fd53`), 3 = Клавиши (`0x58fbce`), 4 = Язык.
+  Общий выход `0x590e63` (`lea rcx,[rbp-0x30]; call 0x97af0`), в «Игре» есть ранние выходы туда же (мышь @ `0x590960..996`).
+  rsi = menu всё время; `[rsp+0x20..0x80)` — свободные временные.
+- Пункты (string_view = {ptr, len}): `AddSlider(menu, group, &key, &label, &hint, optional<float> step)` `0x592720`
+  (шаблон `options_menu_slider_item`, значение 0..1, зажимается; step по значению: float + байт «есть», напр. 0.05),
+  `AddCheckbox(…без step)` `0x5913f0`, список вариантов `0x591c10` (курсор), заголовки языка `0x594390`.
+  group (edx) — 0 у «Игры», 1 звук, 2 графика.
+- `Settings::GetFloat(settings, &key) → xmm0` `0xefaa0`, settings = `[0xe9fbf0]` (мьютекс + хеш; зовёт и код игры).
+- Реализовано в загрузчике: `SWH2.Core/Modding/GameOptions.cs` (`ctx.Options`), код в общей секции `.mods` (`ExeImage.Alloc`: в заголовке exe места только под 2 новые секции); кодогенерация —
+  `SWH2.Core/Core/X64.cs`. Turbo читает свои 3 ползунка каждый кадр прологом перед своим хуком.
+
 ## Слоты сохранений (3, зашито в коде)
 - Файлы: `%APPDATA%\Thunderful\SteamWorld Heist II\<steamid>\Save000\savegame_{:03d}.dat` (+ `.backup`) — имя
   форматируется по индексу, сам формат на число слотов не завязан.

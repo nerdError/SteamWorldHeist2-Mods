@@ -47,6 +47,7 @@ Start a [b]new save[/b] to see every change of content mods such as the Randomiz
 [*][b]Restore original files[/b] — game archives and exe back to vanilla in one click.
 [*][b]Save banks[/b] — store any save slot as a named copy outside the game and put it back into any slot later: keep more runs than the game has slots.
 [*][b]▶ Play[/b] button to start the game right from the loader.
+[*][b]In the game[/b] — the main menu lists the applied mods with their versions, and mods can add their own sliders and checkboxes to the game's Options → Game menu (e.g. the speeds of NE Turbo Battles).
 [*][b]Mod windows[/b] — mods can add their own tool windows (e.g. the Cheats… window of NE Cheat Menu).
 [*][b]swh2 command-line tool[/b] with the same features, for scripts and power users.
 [*][b]For modders[/b] — a mod can be plain edited game files (no code) or a small C# plugin that edits game data, adds Lua hooks or patches the exe; the loader builds its settings form automatically. See MAKING_MODS.md in the loader folder.

@@ -165,7 +165,8 @@ do
 	function OnUpdate(...)
 		run(lockInput)
 		run(netWatch)
-		if C.netLog then run(C.netFix, netApi); run(netCutscene); run(netOverCheck); run(netCrew) end
+		if C.netLog then run(C.netFix, netApi); run(netCutscene); run(netOverCheck); run(netCrew)
+		else run(C.netClearStatus, RemoveCounter) end   -- a save from a network game keeps its status lines
 		run(function()
 			if busy() or not playerTurn() then return end
 			if showIn then

@@ -26,9 +26,11 @@ public sealed class ModContext
     ItemCatalog? _items;
     LuaPatcher? _lua;
 
-    internal ModContext(ModManifest mod, ModSettings settings, GameContent content, Func<ExeImage> exe, Action<string> log)
+    internal ModContext(ModManifest mod, ModSettings settings, GameContent content, Func<ExeImage> exe, Action<string> log, GameOptions? options = null)
     {
         Mod = mod;
+        Options = options ?? new GameOptions();
+        Options.CurrentMod = mod.Id;
         Settings = settings;
         Content = content;
         _exe = exe;
@@ -42,6 +44,8 @@ public sealed class ModContext
     /// <summary>The game exe to patch. Throws if the installed exe isn't the supported build.</summary>
     public ExeImage Exe => _exe();
     public Action<string> Log { get; }
+    /// <summary>Sliders/checkboxes in the game's own Options menu (Options → Game), shared by all mods of the install.</summary>
+    public GameOptions Options { get; }
     public LuaPatcher Lua => _lua ??= new LuaPatcher(Content);
     /// <summary>English strings (Language/en.csv) of the current content.</summary>
     public Localization Loc => _loc ??= Localization.Load(Content);

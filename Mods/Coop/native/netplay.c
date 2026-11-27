@@ -746,8 +746,33 @@ static void HookEndActor(void *sim, void *actor)
  * the record says the enemy turn is over, the guest ends every actor's turn of the faction (0x390e20, as FactionDone
  * does for all of them a frame later anyway) and lets the game end the faction's turn its own way.
  * Returns the number of actors whose turn was ended (-1: turn state unreadable). */
+/* " bt=<return addresses>" of the caller's caller (Steam-build RVAs; x = outside the exe). */
+static void BackTrace(char *bt, size_t size)
+{
+    void *frames[8];
+    int n = RtlCaptureStackBackTrace(2, 8, frames, NULL);
+    strcpy(bt, " bt=");
+    for (int i = 0; i < n; i++)
+    {
+        ULONG_PTR a = (ULONG_PTR)frames[i];
+        char one[16];
+        if (a > (ULONG_PTR)base && a < (ULONG_PTR)base + 0x1000000) sprintf(one, "%lx,", SteamRva((DWORD)(a - (ULONG_PTR)base)));
+        else strcpy(one, "x,");
+        if (strlen(bt) + strlen(one) < size) strcat(bt, one);
+    }
+}
+
+/* Guest: frame of the last FinishFaction and the turn ends since. An enemy turn in which the host's AI gave no orders
+ * (dormant enemies) ended at the guest with a second turn end in the same frame — the crew's turn, which the host's
+ * game did not end: the guest then skipped its turn and fell behind (2026-11-27, nettest --late, 8/77). */
+static unsigned finishedAt;
+static int endsAfterFinish;
+#define FINISH_FRAMES 3
+
 static int FinishFaction(void *sim)
 {
+    finishedAt = frame;
+    endsAfterFinish = 0;
     int ids[256], n = 0, cleared = 0;
     __try
     {
@@ -829,22 +854,8 @@ static void HookRequestAction(void *sim, void *actor, int index, const void *tar
     if (origin == ORIGIN_LUA && depth == 0 && sim == mainSim) luaSeen++;
     if (origin == ORIGIN_AI && depth == 0 && guest)
         NetLog("# DIFF: the guest's AI gave a command (it should be off): a=%d i=%d n=%s", id, index, name);
-    if (depth > 0 || origin == ORIGIN_OTHER || mainPreview)
-    {
-        /* Who calls RequestAction from inside an action or from an unknown place: return addresses (Steam-build RVAs;
-         * x = outside the exe). */
-        void *frames[8];
-        int n = RtlCaptureStackBackTrace(1, 8, frames, NULL);
-        strcpy(bt, " bt=");
-        for (int i = 0; i < n; i++)
-        {
-            ULONG_PTR a = (ULONG_PTR)frames[i];
-            char one[16];
-            if (a > (ULONG_PTR)base && a < (ULONG_PTR)base + 0x1000000) sprintf(one, "%lx,", SteamRva((DWORD)(a - (ULONG_PTR)base)));
-            else strcpy(one, "x,");
-            if (strlen(bt) + strlen(one) < sizeof bt) strcat(bt, one);
-        }
-    }
+    /* Who calls RequestAction from inside an action or from an unknown place. */
+    if (depth > 0 || origin == ORIGIN_OTHER || mainPreview) BackTrace(bt, sizeof bt);
 
     unsigned *r = Rng();
     NetLog("cmd %u o=%s a=%d ao=%d i=%d n=%s t=%d:%s to=%d fl=%u r=%08x:%08x e=%d d=%d f=%u pv=%u%s%s", ++seq,
@@ -863,6 +874,20 @@ static ULONG_PTR HookFactionDone(void *turn)
         static unsigned told;
         if (frame - told > 60) { told = frame; NetLog("# turn end refused: waiting for the guest to enter the battle"); }
         return 0;
+    }
+    if (origin != ORIGIN_PREVIEW && guest && finishedAt && frame - finishedAt <= FINISH_FRAMES)
+    {
+        char bt[160];
+        BackTrace(bt, sizeof bt);
+        /* The host's game may also have ended two turns in one frame (a faction with no one left): then it's allowed. */
+        Entry *head = scriptPos < scriptLen ? &script[scriptPos] : NULL;
+        int hostToo = head && head->kind == 'e' && scriptPos > 0 && script[scriptPos - 1].kind == 'e' && script[scriptPos - 1].frame == head->frame;
+        if (endsAfterFinish++ > 0 && !hostToo)
+        {
+            NetLog("# second turn end right after the enemy turn was finished (o=%s): refused, the host's game had none%s", NetOriginName(origin), bt);
+            return 0;
+        }
+        NetLog("# turn end after the enemy turn was finished (o=%s)%s", NetOriginName(origin), bt);
     }
     if (origin != ORIGIN_PREVIEW)
     {
@@ -909,12 +934,31 @@ static ULONG_PTR HookFactionDone(void *turn)
     return result;
 }
 
-static int SyncDone(int wanted)
+/* The Lua correction answers "<state> <missing>"; *missing = actors alive in the host's state but gone here. */
+static int SyncDone(int wanted, int *missing)
 {
     FILE *f = _wfopen(syncedPath, L"r");
-    int n = -1;
-    if (f) { if (fscanf(f, "%d", &n) != 1) n = -1; fclose(f); }
+    int n = -1, m = 0;
+    if (f) { if (fscanf(f, "%d %d", &n, &m) < 1) n = -1; fclose(f); }
+    if (missing) *missing = n == wanted ? m : 0;
     return n == wanted;
+}
+
+/* Hard correction (live guest): an actor died here but lives at the host — the soft correction can't bring it back
+ * (2026-11-27: the guest's shot killed an enemy the same shot at the host left alive). The guest quits to the menu and
+ * joins the host's battle again from the host's latest save, then catches up with its log. At most once a minute. */
+static void Resync(int missing)
+{
+    static ULONGLONG last;
+    ULONGLONG now = GetTickCount64();
+    if (last && now - last < 60000)
+    {
+        NetLog("# DIFF: %d actors of the host's state gone here; rejoined less than a minute ago, playing on", missing);
+        return;
+    }
+    last = now;
+    NetLog("# DIFF: %d actors of the host's state gone here: rejoining the host's battle from its save", missing);
+    NetQuitToMenu();
 }
 
 static void SyncRequest(int wanted)
@@ -1219,6 +1263,9 @@ static void HostPump(void *sim)
 }
 
 static int sceneAt[16];   /* guest: the script entry each of the host's scene lines came before */
+static long long sceneCheckpoint[16];   /* guest: > 0 = that scene is the host's checkpoint load, host log byte after its line */
+static long long checkpointLine;        /* guest: a "checkpoint" line arrived (host log byte after it), its scene comes next */
+static long long needFrom;              /* guest: the host's save must be from this host log byte on (0: any) */
 
 static void Pump(void *sim)
 {
@@ -1240,7 +1287,19 @@ static void Pump(void *sim)
     if (live && scenePos >= 0 && scenePos < scenesLen && sceneAt[scenePos] <= scriptPos)
     {
         static int toldAt = -1;
-        if (toldAt != scriptPos) { toldAt = scriptPos; NetLog("# the host went on to another scene: this battle's replay stops here"); }
+        if (toldAt != scriptPos)
+        {
+            toldAt = scriptPos;
+            if (sceneCheckpoint[scenePos] > 0)
+            {
+                /* The host loaded a checkpoint: its battle starts over from its last save; this guest follows from the
+                 * save the host writes once it runs again (not an older one). */
+                needFrom = sceneCheckpoint[scenePos];
+                NetLog("# the host loaded a checkpoint: to the main menu, joining from its next save (host log byte >= %lld)", needFrom);
+                NetQuitToMenu();
+            }
+            else NetLog("# the host went on to another scene: this battle's replay stops here");
+        }
         return;
     }
     if (scriptPos >= scriptLen) { GuestPlayPump(sim); return; }
@@ -1285,10 +1344,12 @@ static void Pump(void *sim)
                 syncWait = 0;
                 SyncRequest(syncWanted);
             }
-            if (!SyncDone(syncWanted) && ++syncWait < SYNC_TIMEOUT) return;
+            int missing = 0;
+            if (!SyncDone(syncWanted, &missing) && ++syncWait < SYNC_TIMEOUT) return;
             if (syncWait >= SYNC_TIMEOUT) NetLog("# DIFF: state %d not corrected (no answer from the mission Lua)", syncWanted);
             statesSynced = syncWanted;
             idle = 0;
+            if (missing > 0 && live && guest) { Resync(missing); return; }
             return;   /* the correction may start actions: wait for idle again */
         }
     }
@@ -1652,7 +1713,13 @@ static void ParseScriptLine(const char *line)
     }
     if (sscanf(line, "scene r=%x:%x", &z, &w) == 2)
     {
-        if (scenesLen < 16) { sceneZ[scenesLen] = z; sceneW[scenesLen] = w; sceneAt[scenesLen] = scriptLen; scenesLen++; }
+        if (scenesLen < 16) { sceneZ[scenesLen] = z; sceneW[scenesLen] = w; sceneAt[scenesLen] = scriptLen; sceneCheckpoint[scenesLen] = checkpointLine; scenesLen++; }
+        checkpointLine = 0;
+        return;
+    }
+    if (strncmp(line, "checkpoint", 10) == 0 && (line[10] == '\n' || line[10] == '\r' || !line[10]))
+    {
+        checkpointLine = NetTcpBase() + scriptOffset;
         return;
     }
     int o = NetParseLine(line, &tmp);
@@ -1726,6 +1793,7 @@ static void ResetForJoin(int ends)
     statesSynced = syncWanted = syncWait = 0;
     gatePassed = clearedFor = 0;
     scenesLen = scenePos = 0;
+    checkpointLine = 0;
     spawnsLen = spawnPos = 0;
     earlyEnds = pending = 0;
     endAskedFor = -1;
@@ -1772,6 +1840,34 @@ static MenuUpdate_t realMenuUpdate;
 static int quitWanted, quitFired;
 static ULONGLONG menuSince, continueAt;
 
+/* ---- checkpoint loads ----
+ * The pause menu's / failure popup's "Load checkpoint" = GameState::LoadRestorePoint 0xc7410(GameState): a new GameState
+ * in mode 3 (restore point; +0xb0, constructor 0xc1390) loads the battle again from the last in-mission save in memory
+ * (0xc64e0), and its scene is made anew. That writes no save, so the guest had nothing to follow (it stopped at the
+ * host's new scene line and the host waited for it). Now the host logs "checkpoint" and asks for a save once its battle
+ * runs again: GameState::Update saves when [GameState+0xb4] is set and it is safe (0xc2124 -> 0xcc360 -> 0xccc00).
+ * The guest, at the scene line after "checkpoint", quits to the main menu and joins from the host's first save written
+ * after that line. A guest's own checkpoint load would leave the host's battle: it rejoins the host instead. */
+typedef void (*Checkpoint_t)(void *game);
+static Checkpoint_t realCheckpoint;
+#define RVA_Checkpoint 0xc7410
+static int saveAfterCheckpoint, checkpointWanted;
+
+static void HookCheckpoint(void *game)
+{
+    if (me == 2 && live)
+    {
+        NetLog("# the guest loaded a checkpoint: the host's battle goes on — rejoining it instead");
+        NetQuitToMenu();
+        return;
+    }
+    NetLog("checkpoint");
+    if (hosting) saveAfterCheckpoint = 1;
+    realCheckpoint(game);
+}
+
+void NetLoadCheckpoint(void) { checkpointWanted = 1; }
+
 int NetLogHas(const char *text)
 {
     if (!outPath[0]) return 0;
@@ -1806,6 +1902,20 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
 {
     ULONG_PTR r = realGameUpdate(game, dt);
     menuSince = 0;
+    int battle = *(int *)((char *)game + 0x110) <= 1, ticking = worldTick && GetTickCount64() - worldTick < 1000;
+    if (saveAfterCheckpoint && battle && ticking)
+    {
+        saveAfterCheckpoint = 0;
+        *((unsigned char *)game + 0xb4) = 1;
+        NetLog("# host: battle running again after the checkpoint: save asked for (the guest joins from it)");
+    }
+    if (checkpointWanted && battle && ticking)
+    {
+        checkpointWanted = 0;
+        DWORD cp = ExeRva(RVA_Checkpoint);
+        if (cp && realCheckpoint) ((Checkpoint_t)(base + cp))(game);
+        else NetLog("# ERROR: checkpoint: hook not installed");
+    }
     DWORD fire = ExeRva(RVA_FireSignal);
     if (quitWanted && !quitFired && fire)
     {
@@ -1920,8 +2030,9 @@ void NetIdle(void)
             loggedFrom = from;
             NetLog("# guest: the host's save: %d bytes, host log byte %lld, %s (this guest played to %lld)", len, from, battle ? "battle" : "map", seen);
         }
-        if (battle && from > nextFrom && (from > seen || leftMid))
+        if (battle && from > nextFrom && from >= needFrom && (from > seen || leftMid))
         {
+            needFrom = 0;
             free(nextSave);
             nextSave = data;
             nextSaveLen = len;
@@ -2147,12 +2258,15 @@ void NetInstall(char *exeBase, const wchar_t *dir)
         if (findChild) atFindChild = base + findChild;
         realSlotUpdate = findChild ? (SlotUpdate_t)InlineHook(RVA_SlotUpdate, slotUpdate, sizeof slotUpdate, (void *)HookSlotUpdate) : NULL;
         if (!realSlotUpdate) NetLog("# ERROR: party slot hook not installed: no owner colours on the portraits");
+        static const unsigned char gameUpdate[] = { 0x48,0x8b,0xc4,0x56,0x57,0x41,0x56,0x48,0x81,0xec,0x30,0x05,0x00,0x00 };
+        static const unsigned char checkpoint[] = { 0x57,0x48,0x83,0xec,0x30,0x48,0xc7,0x44,0x24,0x20,0xfe,0xff,0xff,0xff };
+        realGameUpdate = (GameUpdate_t)InlineHook(RVA_GameUpdate, gameUpdate, sizeof gameUpdate, (void *)HookGameUpdate);
+        realCheckpoint = (Checkpoint_t)InlineHook(RVA_Checkpoint, checkpoint, sizeof checkpoint, (void *)HookCheckpoint);
+        NetLog(realGameUpdate && realCheckpoint ? "# %s: checkpoint loads followed" : "# ERROR: %s: checkpoint hooks not installed", me == 1 ? "host" : "guest");
         if (me == 2)
         {
-            static const unsigned char gameUpdate[] = { 0x48,0x8b,0xc4,0x56,0x57,0x41,0x56,0x48,0x81,0xec,0x30,0x05,0x00,0x00 };
             static const unsigned char quit[] = { 0x4c,0x8b,0xdc,0x53,0x48,0x83,0xec,0x50,0x49,0xc7,0x43,0xd8,0xfe,0xff,0xff,0xff };
             static const unsigned char menuUpdate[] = { 0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0x6c,0x24,0xc0 };
-            realGameUpdate = (GameUpdate_t)InlineHook(RVA_GameUpdate, gameUpdate, sizeof gameUpdate, (void *)HookGameUpdate);
             realQuit = (Quit_t)InlineHook(RVA_Quit, quit, sizeof quit, (void *)HookQuit);
             realMenuUpdate = (MenuUpdate_t)InlineHook(RVA_MenuUpdate, menuUpdate, sizeof menuUpdate, (void *)HookMenuUpdate);
             NetLog(realGameUpdate && realQuit && realMenuUpdate ? "# guest: the next battle joins without a restart (to the main menu, Continue: by itself)"

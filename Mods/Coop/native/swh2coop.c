@@ -369,6 +369,7 @@ static void AutoStep(void)
             NetQuitToMenu();
             continue;
         }
+        if (strcmp(cmd, "checkpoint") == 0) { NetLoadCheckpoint(); continue; }
         if (strcmp(cmd, "cutscenes") == 0) { autoCutscenes = strcmp(arg, "on") == 0; continue; }
         if (strcmp(cmd, "popups") == 0) { autoPopups = strcmp(arg, "on") == 0; autoPopupSeen = NetPopupTick(); continue; }
         if (strcmp(cmd, "pad") == 0)
