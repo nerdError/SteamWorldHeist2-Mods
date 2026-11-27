@@ -119,6 +119,7 @@ static int ordSeeded;      /* guest, joinedMid: the host's ordinals are in (once
 static wchar_t guestSlotPath[MAX_PATH];
 static char *nextSave;
 static int nextSaveLen, nextEnds, rejoinEnds, rejoinPending;
+static int scenesMade;   /* guest: scenes (battles, the world map) this game made so far */
 static int leftMid;   /* the guest quit to the menu inside the host's battle: it may join that battle again */
 static long long nextFrom, rejoinFrom;
 static void ResetForJoin(int ends);
@@ -1497,6 +1498,15 @@ static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
             while (scenesLen == 0 && GetTickCount64() < until) { ReadMore(); if (scenesLen == 0) Sleep(20); }
             if (scenesLen == 0) scenePos = -1;
         }
+        /* Only the first scene of the game waits for the host's: later ones are the world map (it is a scene too: a
+         * guest back on the map hung on a black screen until the host made one) or battles joined from the host's
+         * save (joinedMid, above). */
+        else if (scenesMade)
+        {
+            NetLog("# a scene of this game alone (the world map): not the host's, nothing waited for");
+            scenesMade++;
+            return realSceneCreate(scene, a2, a3, a4);
+        }
         else WaitForHost(&scenesLen, scenePos, 180000, "mission scene");
         if (scenePos == -1) { scenePos = 0; NetLog("# joined inside the host's mission: no scene line, RNG from the commands"); }
         else if (scenePos < scenesLen) { r[0] = sceneZ[scenePos]; r[1] = sceneW[scenePos]; scenePos++; }
@@ -1506,6 +1516,7 @@ static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
     /* A new mission: the host waits for the guest again, the guest says "ready" again from it. */
     if (hosting && guestIn) { guestIn = 0; NetLog("# new mission: waiting for the guest to enter the battle"); }
     readySentFor = 0;
+    scenesMade++;
     return realSceneCreate(scene, a2, a3, a4);
 }
 
@@ -1751,6 +1762,28 @@ static MenuUpdate_t realMenuUpdate;
 static int quitWanted, quitFired;
 static ULONGLONG menuSince, continueAt;
 
+int NetLogHas(const char *text)
+{
+    if (!outPath[0]) return 0;
+    HANDLE f = CreateFileW(outPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+    if (f == INVALID_HANDLE_VALUE) return 0;
+    LARGE_INTEGER size;
+    int found = 0;
+    if (GetFileSizeEx(f, &size) && size.QuadPart > 0 && size.QuadPart < 64 * 1024 * 1024)
+    {
+        char *buf = (char *)malloc((size_t)size.QuadPart + 1);
+        DWORD got = 0;
+        if (buf && ReadFile(f, buf, (DWORD)size.QuadPart, &got, NULL))
+        {
+            buf[got] = 0;
+            found = strstr(buf, text) != NULL;
+        }
+        free(buf);
+    }
+    CloseHandle(f);
+    return found;
+}
+
 void NetQuitToMenu(void)
 {
     if (!realGameUpdate) { NetLog("# ERROR: quit to the main menu: hook not installed"); return; }
@@ -1769,6 +1802,12 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
         char *g = (char *)game;
         int level = *(int *)(g + 0x110);
         char *obj = level >= 0 && level <= 3 ? *(char **)(g + (level >= 2 ? 0xe8 : 0xc0)) : NULL;
+        static ULONGLONG told;
+        if (!obj && GetTickCount64() - told > 2000)
+        {
+            told = GetTickCount64();
+            NetLog("# quit waits: game state level %d, battle %p, map %p", level, *(void **)(g + 0xc0), *(void **)(g + 0xe8));
+        }
         if (obj)
         {
             quitFired = 1;
@@ -1853,14 +1892,24 @@ void NetIdle(void)
     ULONGLONG now = GetTickCount64();
     if (now - last < 500) return;
     last = now;
-    if (worldTick && now - worldTick < 3000) { wasInBattle = 1; return; }
+    static int idleLogged;
+    if (worldTick && now - worldTick < 3000) { wasInBattle = 1; idleLogged = 0; return; }
     if (!wasInBattle || rejoinPending) return;   /* before the first battle the loader put the save there already */
+    if (!idleLogged) { idleLogged = 1; NetLog("# guest: out of the battle: asking the host for its save every 3 s"); }
     char *data;
     int len, ends, battle;
     long long from;
-    if (NetTcpFetchTake(&data, &len, &from, &ends, &battle) == 1)
+    int took = NetTcpFetchTake(&data, &len, &from, &ends, &battle);
+    static long long loggedFrom = -2;
+    if (took == -1 && loggedFrom != -1) { loggedFrom = -1; NetLog("# guest: the host's save could not be fetched (%s)", NetTcpFetchError()); }
+    if (took == 1)
     {
         long long seen = NetTcpBase() + scriptOffset;   /* host log bytes this guest has played */
+        if (from != loggedFrom)
+        {
+            loggedFrom = from;
+            NetLog("# guest: the host's save: %d bytes, host log byte %lld, %s (this guest played to %lld)", len, from, battle ? "battle" : "map", seen);
+        }
         if (battle && from > nextFrom && (from > seen || leftMid))
         {
             free(nextSave);

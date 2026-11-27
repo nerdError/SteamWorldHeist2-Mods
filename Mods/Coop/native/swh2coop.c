@@ -280,8 +280,8 @@ static short __cdecl HookGetAxis(void *gc, int axis)
  * Every command run is logged to swh2_coop_input.log ("auto: ...").
  */
 static wchar_t autoPath[MAX_PATH], cutscenePath[MAX_PATH];
-static int autoCutscenes, autoEnterMs;
-static ULONGLONG autoEnterPressed;
+static int autoCutscenes, autoEnterMs, autoOver;   /* autoOver: "over" waits for the mission's end in the netplay log */
+static ULONGLONG autoEnterPressed, autoEnterSince;   /* "enter": a battle that runs after the command (not the last one) */
 static ULONGLONG autoCutPolled, autoCutPressed;
 static int autoOn, autoDone, autoPopups, autoKeySc, autoKeySym, autoPhase, windowId = 1;
 static ULONGLONG autoNext, autoPolled, autoPopupSeen, autoKeyUntil;
@@ -329,12 +329,20 @@ static void AutoStep(void)
     }
     if (autoEnterMs && autoPhase == 0)
     {
-        if (NetWorldTick()) { autoEnterMs = 0; Log("auto: in the mission"); }
+        if (NetWorldTick() > autoEnterSince) { autoEnterMs = 0; Log("auto: in the mission"); }
         else
         {
             if (now - autoEnterPressed >= (ULONGLONG)autoEnterMs) { autoEnterPressed = now; AutoStartKey(40, 13); }
             return;
         }
+    }
+    if (autoOver && autoPhase == 0)
+    {
+        if (now - autoPolled < 1000) return;
+        autoPolled = now;
+        if (!NetLogHas("# mission over")) return;
+        autoOver = 0;
+        Log("auto: mission over");
     }
     if (autoPhase || now < autoNext || now - autoPolled < 200) return;
     autoPolled = now;
@@ -350,7 +358,8 @@ static void AutoStep(void)
         if (sscanf(line, "%31s %63s", cmd, arg) < 1 || cmd[0] == '#') continue;
         Log("auto: %s %s", cmd, arg);
         if (strcmp(cmd, "wait") == 0) { autoNext = now + (ULONGLONG)atoi(arg); break; }
-        if (strcmp(cmd, "enter") == 0) { autoEnterMs = atoi(arg) > 0 ? atoi(arg) : 2500; autoEnterPressed = now; break; }
+        if (strcmp(cmd, "enter") == 0) { autoEnterMs = atoi(arg) > 0 ? atoi(arg) : 2500; autoEnterPressed = now; autoEnterSince = now + 1000; break; }
+        if (strcmp(cmd, "over") == 0) { autoOver = 1; break; }
         if (strcmp(cmd, "quit") == 0)
         {
             autoQuitAt = now;

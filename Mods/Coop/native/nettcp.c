@@ -300,6 +300,37 @@ static void SendSave(SOCKET s)
     if (select(0, &r, NULL, NULL, &tv) > 0) recv(s, drain, sizeof drain, 0);
 }
 
+/* One connection from the listening socket (waiting up to ms for it): "getsave" / "getinfo" are answered and closed
+ * here (INVALID_SOCKET returned); anything else is a guest: its socket, first line (ok = 1 when one came) and what
+ * followed it in buf. */
+static SOCKET AcceptOne(SOCKET ls, int ms, char *buf, int *len, char *first, int firstMax, int *ok)
+{
+    fd_set ready;
+    FD_ZERO(&ready);
+    FD_SET(ls, &ready);
+    struct timeval wait = { 0, ms * 1000 };
+    if (ms > 0 && select(0, &ready, NULL, NULL, &wait) <= 0) return INVALID_SOCKET;
+    SOCKET s = accept(ls, NULL, NULL);
+    if (s == INVALID_SOCKET) { Sleep(ms > 0 ? 200 : 0); return INVALID_SOCKET; }
+    u_long blocking = 0;
+    ioctlsocket(s, FIONBIO, &blocking);
+    Tune(s);
+    *len = 0;
+    first[0] = 0;
+    *ok = FirstLine(s, buf, len, CHUNK, first, firstMax, 3000);
+    if (*ok && strcmp(first, "getsave") == 0) { SendSave(s); closesocket(s); return INVALID_SOCKET; }
+    if (*ok && strcmp(first, "getinfo") == 0)
+    {
+        static char line[sizeof shareInfo + 8];
+        sprintf(line, "info %s\n", shareInfo[0] ? shareInfo : "-");
+        SendAll(s, line, (int)strlen(line));
+        shutdown(s, SD_SEND);
+        closesocket(s);
+        return INVALID_SOCKET;
+    }
+    return s;
+}
+
 static DWORD WINAPI HostThread(LPVOID unused)
 {
     (void)unused;
@@ -318,38 +349,39 @@ static DWORD WINAPI HostThread(LPVOID unused)
         InterlockedExchange(&tcpState, NET_TCP_FAILED);
         return 1;
     }
-    /* accept() with a timeout, so the shared save is watched while no one is connected too. */
+    /* accept() with a timeout, so the shared save is watched while no one is connected too. The listening socket is
+     * watched while a guest is on as well: a guest's game asks for the host's save then ("getsave", NetTcpFetchStart:
+     * the next battle without a restart), and a guest coming back may connect before the old connection is seen dead. */
     u_long nonBlocking = 1;
     ioctlsocket(ls, FIONBIO, &nonBlocking);
+    static char in[CHUNK], nextIn[CHUNK];
+    SOCKET next = INVALID_SOCKET;   /* a guest's connection that came while another one was on */
+    char nextFirst[160];
+    int nextInLen = 0, nextOk = 0;
     while (!tcpStop)
     {
-        InterlockedExchange(&tcpState, NET_TCP_WAITING);
-        WatchSave();
-        fd_set ready;
-        FD_ZERO(&ready);
-        FD_SET(ls, &ready);
-        struct timeval wait = { 0, 200 * 1000 };
-        if (select(0, &ready, NULL, NULL, &wait) <= 0) continue;
-        SOCKET s = accept(ls, NULL, NULL);
-        if (s != INVALID_SOCKET) { u_long blocking = 0; ioctlsocket(s, FIONBIO, &blocking); }
-        if (s == INVALID_SOCKET) { Sleep(200); continue; }
-        Tune(s);
-        static char in[CHUNK];
-        int inLen = 0;
+        SOCKET s;
+        int inLen = 0, ok;
         char first[160];
         long long offset = 0;
-        if (FirstLine(s, in, &inLen, sizeof in, first, sizeof first, 3000))
+        if (next != INVALID_SOCKET)
         {
-            if (strcmp(first, "getsave") == 0) { SendSave(s); closesocket(s); continue; }
-            if (strcmp(first, "getinfo") == 0)
-            {
-                static char line[sizeof shareInfo + 8];
-                sprintf(line, "info %s\n", shareInfo[0] ? shareInfo : "-");
-                SendAll(s, line, (int)strlen(line));
-                shutdown(s, SD_SEND);
-                closesocket(s);
-                continue;
-            }
+            s = next;
+            next = INVALID_SOCKET;
+            memcpy(in, nextIn, nextInLen);
+            inLen = nextInLen;
+            strcpy(first, nextFirst);
+            ok = nextOk;
+        }
+        else
+        {
+            InterlockedExchange(&tcpState, NET_TCP_WAITING);
+            WatchSave();
+            s = AcceptOne(ls, 200, in, &inLen, first, sizeof first, &ok);
+            if (s == INVALID_SOCKET) continue;
+        }
+        if (ok)
+        {
             if (strncmp(first, "resume ", 7) == 0)
             {
                 /* A guest coming back: it has the log up to there. Past the end = another log (the host's game started
@@ -367,16 +399,24 @@ static DWORD WINAPI HostThread(LPVOID unused)
         while (!tcpStop && SendNewLines(s, hostJob.path, &offset))
         {
             WatchSave();
-            /* Wait up to POLL_MS for the guest's lines (instead of a plain sleep). */
+            /* Wait up to POLL_MS for the guest's lines (instead of a plain sleep), or a new connection. */
             fd_set r;
             FD_ZERO(&r);
             FD_SET(s, &r);
+            FD_SET(ls, &r);
             struct timeval tv = { 0, POLL_MS * 1000 };
             int k = select(0, &r, NULL, NULL, &tv);
-            if (k < 0 || (k > 0 && !ReceiveLines(s, in, &inLen, sizeof in))) break;
+            if (k < 0) break;
+            if (k > 0 && FD_ISSET(ls, &r))
+            {
+                next = AcceptOne(ls, 0, nextIn, &nextInLen, nextFirst, sizeof nextFirst, &nextOk);
+                if (next != INVALID_SOCKET) break;   /* the guest again, on a new connection: that one goes on */
+            }
+            if (k > 0 && FD_ISSET(s, &r) && !ReceiveLines(s, in, &inLen, sizeof in)) break;
         }
         closesocket(s);
     }
+    if (next != INVALID_SOCKET) closesocket(next);
     closesocket(ls);
     return 0;
 }
@@ -542,6 +582,9 @@ static int RecvAll(SOCKET s, char *p, int n)
     return 1;
 }
 
+static char fetchError[200];
+const char *NetTcpFetchError(void) { return fetchError; }
+
 static DWORD WINAPI FetchThread(LPVOID unused)
 {
     (void)unused;
@@ -558,6 +601,7 @@ static DWORD WINAPI FetchThread(LPVOID unused)
         freeaddrinfo(res);
     }
     int ok = 0;
+    strcpy(fetchError, s == INVALID_SOCKET ? "no connection to the host" : "no answer");
     if (s != INVALID_SOCKET)
     {
         DWORD ms = 15000;
@@ -566,6 +610,7 @@ static DWORD WINAPI FetchThread(LPVOID unused)
         if (SendAll(s, "getsave\n", 8))
             while (n < (int)sizeof head - 1 && recv(s, head + n, 1, 0) == 1 && head[n] != '\n') n++;
         head[n] = 0;
+        if (n) _snprintf(fetchError, sizeof fetchError - 1, "answer: %.150s", head);
         unsigned long size = 0;
         char name[MAX_PATH], where[16] = "";
         long long from = 0;

@@ -24,7 +24,7 @@ public sealed partial class CoopMod : IModTool, IModCommand
         "  info [ADDRESS[:PORT]]   (this game's mods/data fingerprint; with an address: compare with the host's running game) |\n" +
         "  status | store SLOT | record SLOT [--no-launch] | replay SLOT [--no-launch] | compare [--all] |\n" +
         "  run SLOT [--record | --autoplay] [--timeout SEC] [--stall SEC] [--script FILE]   (unattended: autopilot into the mission, replay, close, compare) |\n" +
-        "  net SLOT [--guest DIR] [--port N] [--timeout SEC] [--stall SEC] [--guest-plays] [--shots] [--names HOST,GUEST] [--drop SEC] [--late] [--rejoin SEC]   (network test: this copy hosts, the GOG copy replays live over TCP;\n" +
+        "  net SLOT [--guest DIR] [--port N] [--timeout SEC] [--stall SEC] [--guest-plays] [--shots] [--names HOST,GUEST] [--drop SEC] [--late] [--rejoin SEC] [--after SEC] [--next] [--map-quit] [--win SEC]   (network test: this copy hosts, the GOG copy replays live over TCP;\n" +
         "    --guest-plays: the crew is split host/guest, each plays its own from the record; --drop: the guest's connection breaks once, SEC s in;\n" +
         "    --late: the guest joins inside the host's battle, from the host's save there;\n" +
         "    --rejoin SEC: the guest quits to the main menu SEC s into the battle and must come back into it by itself)";
@@ -97,7 +97,7 @@ public sealed partial class CoopMod : IModTool, IModCommand
                     int port = int.TryParse(Opt("--port"), out int pt) ? pt : 27015;
                     string guestDir = Opt("--guest") ?? GameInstall.DetectAll().FirstOrDefault(d => !string.Equals(d, Game().Root, StringComparison.OrdinalIgnoreCase))
                         ?? throw new InvalidOperationException("No second game copy found: pass --guest DIR.");
-                    ctx.Log(NetTest.RunNet(Game(), new GameInstall(guestDir), Slot(), port, timeout, stall, out bool netDiffers, guestPlays: a.Contains("--guest-plays"), shots: a.Contains("--shots"), names: Opt("--names")?.Split(','), dropSec: int.TryParse(Opt("--drop"), out int drop) ? drop : 0, late: a.Contains("--late"), rejoinSec: int.TryParse(Opt("--rejoin"), out int rejoin) ? rejoin : 0));
+                    ctx.Log(NetTest.RunNet(Game(), new GameInstall(guestDir), Slot(), port, timeout, stall, out bool netDiffers, guestPlays: a.Contains("--guest-plays"), shots: a.Contains("--shots"), names: Opt("--names")?.Split(','), dropSec: int.TryParse(Opt("--drop"), out int drop) ? drop : 0, late: a.Contains("--late"), rejoinSec: int.TryParse(Opt("--rejoin"), out int rejoin) ? rejoin : 0, afterSec: int.TryParse(Opt("--after"), out int after) ? after : 0, next: a.Contains("--next"), mapQuit: a.Contains("--map-quit"), winSec: int.TryParse(Opt("--win"), out int win) ? win : 0));
                     return netDiffers ? 1 : 0;
                 }
                 case "compare":

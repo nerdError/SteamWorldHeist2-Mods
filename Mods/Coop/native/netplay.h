@@ -55,7 +55,11 @@ int NetTcpRebase(long long to);
 int NetTcpFetchStart(void);
 int NetTcpFetchTake(char **data, int *len, long long *from, int *ends, int *battle);
 /* Guest, called by swh2coop.c from the main loop (every frame, menus too): the next battle without a restart. */
+/* Guest: why the last fetch failed (the host's answer or what went wrong). */
+const char *NetTcpFetchError(void);
 void NetIdle(void);
 /* Guest: go to the main menu from the battle or the world map (as pause, Quit; the autopilot's "quit"). */
 void NetQuitToMenu(void);
+/* Test autopilot: the netplay log (record / replayed) has this text (1). */
+int NetLogHas(const char *text);
 void NetTcpTestDrop(int ms);
