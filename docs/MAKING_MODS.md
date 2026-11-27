@@ -126,4 +126,4 @@ Rules of thumb:
 ## Publishing
 Zip with the **game folder as root**: `Mods\MyMod\mod.json`, `Mods\MyMod\MyMod.dll`, `Mods\MyMod\files\...`.
 Users unpack into the game folder, install with Vortex, or drop the zip on the loader's mod list.
-Mark *SWH2 Mod Loader* as a requirement on the Nexus page.
+Mark *NE Mod Loader & Manager* as a requirement on the Nexus page.

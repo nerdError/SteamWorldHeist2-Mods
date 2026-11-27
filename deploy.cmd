@@ -1,7 +1,7 @@
 @echo off
 rem Double-click: builds the loader and all mods and copies them into the game folder (default Steam path).
 rem Another game folder: deploy.cmd "D:\Games\SteamWorld Heist 2"
-rem Your mod settings (profile.json), backups and reports are kept. After this, open SWH2 Mod Loader and click Apply.
+rem Your mod settings (profile.json), backups and reports are kept. After this, open NE Mod Loader & Manager and click Apply.
 setlocal
 tasklist /fi "imagename eq SteamWorld Heist 2.exe" 2>nul | find /i "SteamWorld Heist 2.exe" >nul
 if %ERRORLEVEL% equ 0 (

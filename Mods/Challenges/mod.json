@@ -1,6 +1,6 @@
 {
   "id": "Challenges",
-  "name": "Challenge Manager",
+  "name": "NE Challenge Manager",
   "version": "1.1.1",
   "author": "nerderror",
   "description": "Optional rules for harder runs, each with its own switch: no grind, whole-game mutators (1 HP, explosive shots, death blasts), permadeath and one-life runs. Works on its own or together with the Randomizer. 'No checkpoints' patches the game exe (supported Steam build only).",

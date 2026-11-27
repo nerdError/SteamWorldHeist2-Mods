@@ -1,6 +1,6 @@
 {
   "id": "MoreSlots",
-  "name": "More Save Slots",
+  "name": "NE More Save Slots",
   "version": "1.0.1",
   "author": "nerderror",
   "description": "More save slots in the main menu (the game has 3). Patches the game exe (supported Steam build only). Saves in the extra slots stay on disk when the mod is turned off, but the game won't show them until it's back on.",

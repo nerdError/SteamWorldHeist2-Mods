@@ -1,6 +1,6 @@
 {
   "id": "CheatMenu",
-  "name": "Cheat Menu",
+  "name": "NE Cheat Menu",
   "version": "1.0.0",
   "author": "nerderror",
   "description": "In-mission cheats from a window in the loader (Cheats… button) or hotkeys Ctrl+Alt+1…8: win mission, heal crew, kill/weaken enemies, alarm off, give any item; toggles: invulnerable crew, frozen enemies, attacks don't end turn.",

@@ -70,7 +70,7 @@ public sealed class CheatForm : Form
             AutoSize = true,
             MaximumSize = new Size(520, 0),
             ForeColor = SystemColors.GrayText,
-            Text = "The Cheat Menu mod must be enabled and applied to the game (Apply to game). "
+            Text = "The NE Cheat Menu mod must be enabled and applied to the game (Apply to game). "
                  + "Cheats work inside missions only. Hotkeys Ctrl+Alt+1…8 work while the game has focus.",
         });
 

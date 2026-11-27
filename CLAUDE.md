@@ -26,9 +26,9 @@ four mods published separately on Nexus: Randomizer, Turbo (exe), Challenges, Ch
 - `Mods/<Id>/` — one project per mod (props in `Mods/Directory.Build.props`; output folder = ready `Mods\<Id>\`).
   Randomizer modules: `Apply(RandomizerContext)`, use `ctx.RngFor("<module>")` so modules don't affect each other's
   output for the same seed; spoiler lines go to `ctx.Spoiler` (= the mod's report).
-- `build.cmd` / `tools/package.ps1` → `dist/SWH2-ModPack-<ver>/` (+ .zip; loader + all mods + `docs/GUIDE_RU.md` as
+- `build.cmd` / `tools/package.ps1` → `dist/SWH2-ModPack-<ver>/` (+ .zip; loader + all mods + `docs/GUIDE_EN.md` + `docs/GUIDE_RU.md` as
   README.txt) and `dist/nexus/*.zip` (archives rooted at the game folder). `build.cmd deploy` (or double-click `deploy.cmd`) copies into the game folder; `build.local.cmd` (git-ignored, from `build.local.example.cmd`) with `AUTO_DEPLOY=1` makes every `build.cmd` run deploy (`build.cmd nodeploy` to skip).
-  When adding a mod, add it to `$mods` in package.ps1 and to GUIDE_RU.md. Unchanged loader/mods are reused from
+  When adding a mod, add it to `$mods` in package.ps1 and to GUIDE_EN.md + GUIDE_RU.md (all READMEs: English first, then Russian). Unchanged loader/mods are reused from
   `obj/package/<name>/` (source hash: project folder + SWH2.Core + Directory.Build.props); `build.cmd rebuild` ignores it.
   If a mod gets inputs outside its folder, add them to its sources list in package.ps1.
 - Everything is `net48` + `LangVersion latest` + PolySharp (root `Directory.Build.props`). Missing BCL APIs: use

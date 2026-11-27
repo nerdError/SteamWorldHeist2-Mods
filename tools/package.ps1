@@ -4,8 +4,9 @@
     SWH2-ModPack-<ver>\        ready folder: its contents go straight into the game folder
                                (SWH2ModLoader\ + Mods\<all mods>\ + README.txt guide)
     SWH2-ModPack-<ver>.zip     the same folder as one archive
-    nexus\                     separate archives for Nexus Mods:
-      SWH2ModLoader-<ver>.zip    unpacks to <game>\SWH2ModLoader\
+    nexus\                     archives for Nexus Mods:
+      SWH2-ModPack-<ver>.zip     main file of the loader page: loader + all mods + guide
+      SWH2ModLoader-<ver>.zip    loader only (optional file), unpacks to <game>\SWH2ModLoader\
       Randomizer-<ver>.zip       unpacks to <game>\Mods\Randomizer\   (same for Turbo, Challenges, CheatMenu)
   Every archive has the game folder as its root, so it works with manual "extract here" and with Vortex.
   Everything targets .NET Framework 4.8 (part of Windows 10 1903+ / 11): players install nothing else.
@@ -134,12 +135,16 @@ Copy-Item (Join-Path $loaderStage 'SWH2ModLoader') $pack -Recurse
 New-Item -ItemType Directory -Force (Join-Path $pack 'Mods') | Out-Null
 foreach ($mod in $mods) { Copy-Item (Join-Path $modStages[$mod] "Mods\$mod") (Join-Path $pack 'Mods') -Recurse }
 # UTF-8 with BOM so every Notepad shows the Cyrillic text correctly.
-$guide = Get-Content -Encoding UTF8 -Raw (Join-Path $root 'docs\GUIDE_RU.md')
+# English guide first, then Russian.
+$guide = (Get-Content -Encoding UTF8 -Raw (Join-Path $root 'docs\GUIDE_EN.md')) + "`r`n`r`n" + (Get-Content -Encoding UTF8 -Raw (Join-Path $root 'docs\GUIDE_RU.md'))
 [IO.File]::WriteAllText((Join-Path $pack 'README.txt'), $guide, (New-Object Text.UTF8Encoding $true))
 
 Write-Host "Archives:"
 New-Zip (Join-Path $dist "$packName.zip") $pack
-New-Zip (Join-Path $dist "nexus\SWH2ModLoader-$loaderVersion.zip") $loaderStage
+New-Zip (Join-Path $dist "nexus\SWH2ModLoader-$loaderVersion.zip") $loaderStage   # optional file: loader only
+# Main file of the loader's Nexus page: the whole pack (loader + every mod + guide).
+Copy-Item (Join-Path $dist "$packName.zip") (Join-Path $dist "nexus\$packName.zip") -Force
+Write-Host "  nexus\$packName.zip  (main file of the loader page)"
 foreach ($a in $modArchives) { New-Zip (Join-Path $dist "nexus\$($a[0])") $a[1] }
 
 # ---- optional: copy into the game folder ---------------------------------------------------

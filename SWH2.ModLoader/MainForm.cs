@@ -62,7 +62,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = $"SWH2 Mod Loader {ModCatalog.LoaderVersion.ToString(3)} — SteamWorld Heist 2";
+        Text = $"NE Mod Loader & Manager {ModCatalog.LoaderVersion.ToString(3)} — SteamWorld Heist 2";
         Font = new Font("Segoe UI", 10F);
         AutoScaleMode = AutoScaleMode.Font;
         ClientSize = new Size(1180, 860);

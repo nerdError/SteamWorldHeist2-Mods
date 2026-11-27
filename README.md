@@ -34,14 +34,14 @@ A mod manager / modding framework for **SteamWorld Heist 2** and four mods built
 
 | What | Folder | Nexus archive |
 |---|---|---|
-| **SWH2 Mod Loader** — the base: mod manager (GUI + `swh2` CLI) and the mod API | `SWH2.Core`, `SWH2.ModLoader`, `SWH2.Cli` | `SWH2ModLoader-<ver>.zip` |
-| **Randomizer** — shuffles missions, rewards, shops, enemies, stats, perks, text (seeded) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
-| **Turbo Battles** — speeds up enemy turns and enemy/reinforcement reveals | `Mods/Turbo` | `Turbo-<ver>.zip` |
-| **Challenge Manager** — challenges: "no grind", "no checkpoints" | `Mods/Challenges` | `Challenges-<ver>.zip` |
-| **Cheat Menu** — in-mission cheats: a loader window + hotkeys, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
-| **More Save Slots** — 4–10 save slots in the main menu instead of 3 (exe patch) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
+| **NE Mod Loader & Manager** — the base: mod manager (GUI + `swh2` CLI) and the mod API | `SWH2.Core`, `SWH2.ModLoader`, `SWH2.Cli` | `SWH2-ModPack-<ver>.zip` (main file: loader + all mods), `SWH2ModLoader-<ver>.zip` (loader only) |
+| **NE Randomizer** — shuffles missions, rewards, shops, enemies, stats, perks, text (seeded) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
+| **NE Turbo Battles** — speeds up enemy turns and enemy/reinforcement reveals | `Mods/Turbo` | `Turbo-<ver>.zip` |
+| **NE Challenge Manager** — challenges: "no grind", "no checkpoints" | `Mods/Challenges` | `Challenges-<ver>.zip` |
+| **NE Cheat Menu** — in-mission cheats: a loader window + hotkeys, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
+| **NE More Save Slots** — 4–10 save slots in the main menu instead of 3 (exe patch) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
 
-Nexus page texts: [docs/NEXUS_LOADER.md](docs/NEXUS_LOADER.md) and `Mods/*/README.md`.
+Nexus page texts: [docs/nexus/](docs/nexus/) (summary + BBCode description per mod).
 How to make mods: [docs/MAKING_MODS.md](docs/MAKING_MODS.md).
 
 ### How it works
@@ -106,9 +106,9 @@ Requires the .NET SDK (8+; tested on 10) — it also builds the `net48` projects
 
 | What | Why |
 |---|---|
-| `dist\SWH2-ModPack-<ver>\` | **ready build**: `SWH2ModLoader\` + `Mods\` (all 4 mods) + `README.txt` (guide, [docs/GUIDE_RU.md](docs/GUIDE_RU.md)). Copy its contents into the game folder |
+| `dist\SWH2-ModPack-<ver>\` | **ready build**: `SWH2ModLoader\` + `Mods\` (all mods) + `README.txt` (guide: [docs/GUIDE_EN.md](docs/GUIDE_EN.md), then [docs/GUIDE_RU.md](docs/GUIDE_RU.md)). Copy its contents into the game folder |
 | `dist\SWH2-ModPack-<ver>.zip` | the same as one archive |
-| `dist\nexus\*.zip` | separate archives of the loader and each mod for Nexus |
+| `dist\nexus\*.zip` | archives for Nexus: the pack (main file of the loader page), the loader alone and each mod |
 
 Only `SWH2ModLoader\SWH2ModLoader.exe` is meant to be run; `deploy` doesn't touch `Backup\`/`profile.json` or the game
 files (those change only on **Apply**). Exes in the projects' `bin\` folders are intermediate — ignore them.
@@ -140,7 +140,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | `Mods/CheatMenu/` | Lua backend and mission hook (`Lua/*.lua`, embedded in the dll), modifiers, `CheatForm` window, `CheatClient` (file-based protocol) |
 | `tools/package.ps1` | builds the Nexus archives |
 | `tools/re/`, `tools/mods/` | developer tools (exe RE, Lua mod generators, sandbox simulator) |
-| `docs/` | `MODDING.md` (work status), `FILE_MAP.md`, `EXE_NOTES.md`, `LUA_API.md`, `MAKING_MODS.md`, `NEXUS_LOADER.md` |
+| `docs/` | `MODDING.md` (work status), `FILE_MAP.md`, `EXE_NOTES.md`, `LUA_API.md`, `MAKING_MODS.md`, `NEXUS_LOADER.md` (loader README), `nexus/` (Nexus page texts) |
 
 ### Ideas for the future
 
@@ -181,14 +181,14 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 
 | Что | Папка | Архив для Nexus |
 |---|---|---|
-| **SWH2 Mod Loader** — основа: менеджер модов (GUI + CLI `swh2`), API для модов | `SWH2.Core`, `SWH2.ModLoader`, `SWH2.Cli` | `SWH2ModLoader-<ver>.zip` |
-| **Randomizer** — перемешивание миссий, наград, магазинов, врагов, характеристик, перков, реплик (по сиду) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
-| **Turbo Battles** — ускорение ходов врагов и показа врагов/подкреплений | `Mods/Turbo` | `Turbo-<ver>.zip` |
-| **Challenge Manager** — челленджи: «без гринда», «без чекпоинтов» | `Mods/Challenges` | `Challenges-<ver>.zip` |
-| **Cheat Menu** — читы в миссиях: окно в загрузчике + горячие клавиши, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
-| **More Save Slots** — 4–10 слотов сохранения в главном меню вместо 3 (патч exe) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
+| **NE Mod Loader & Manager** — основа: менеджер модов (GUI + CLI `swh2`), API для модов | `SWH2.Core`, `SWH2.ModLoader`, `SWH2.Cli` | `SWH2-ModPack-<ver>.zip` (main file: loader + all mods), `SWH2ModLoader-<ver>.zip` (loader only) |
+| **NE Randomizer** — перемешивание миссий, наград, магазинов, врагов, характеристик, перков, реплик (по сиду) | `Mods/Randomizer` | `Randomizer-<ver>.zip` |
+| **NE Turbo Battles** — ускорение ходов врагов и показа врагов/подкреплений | `Mods/Turbo` | `Turbo-<ver>.zip` |
+| **NE Challenge Manager** — челленджи: «без гринда», «без чекпоинтов» | `Mods/Challenges` | `Challenges-<ver>.zip` |
+| **NE Cheat Menu** — читы в миссиях: окно в загрузчике + горячие клавиши, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
+| **NE More Save Slots** — 4–10 слотов сохранения в главном меню вместо 3 (патч exe) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
 
-Тексты для страниц Nexus: [docs/NEXUS_LOADER.md](docs/NEXUS_LOADER.md) и `Mods/*/README.md`.
+Тексты для страниц Nexus: [docs/nexus/](docs/nexus/) (краткое описание + BBCode для каждого мода).
 Как делать моды: [docs/MAKING_MODS.md](docs/MAKING_MODS.md).
 
 ### Как это устроено
@@ -257,9 +257,9 @@ swh2 cheat win|heal|...                     # команда мода Cheat Menu
 
 | Что | Зачем |
 |---|---|
-| `dist\SWH2-ModPack-<ver>\` | **готовая сборка**: `SWH2ModLoader\` + `Mods\` (все 4 мода) + `README.txt` (инструкция, [docs/GUIDE_RU.md](docs/GUIDE_RU.md)). Содержимое копируется в папку игры |
+| `dist\SWH2-ModPack-<ver>\` | **готовая сборка**: `SWH2ModLoader\` + `Mods\` (все моды) + `README.txt` (инструкция: [docs/GUIDE_EN.md](docs/GUIDE_EN.md), затем [docs/GUIDE_RU.md](docs/GUIDE_RU.md)). Содержимое копируется в папку игры |
 | `dist\SWH2-ModPack-<ver>.zip` | то же одним архивом |
-| `dist\nexus\*.zip` | отдельные архивы загрузчика и каждого мода для Nexus |
+| `dist\nexus\*.zip` | архивы для Nexus: сборка (основной файл страницы загрузчика), загрузчик отдельно и каждый мод |
 
 Запускать нужно только `SWH2ModLoader\SWH2ModLoader.exe`; `deploy` не трогает `Backup\`/`profile.json` и файлы игры
 (они меняются только по **Apply**). Exe в `bin\` папках проектов — промежуточные, их можно игнорировать.
@@ -295,7 +295,7 @@ PolySharp (полифиллы на этапе компиляции), недос�
 | `Mods/CheatMenu/` | Lua-бэкенд и хук миссий (`Lua/*.lua`, встроены в dll), модификаторы, окно `CheatForm`, `CheatClient` (файловый протокол) |
 | `tools/package.ps1` | сборка архивов для Nexus |
 | `tools/re/`, `tools/mods/` | инструменты разработчика (RE exe, генераторы Lua-модов, симулятор песочницы) |
-| `docs/` | `MODDING.md` (состояние работ), `FILE_MAP.md`, `EXE_NOTES.md`, `LUA_API.md`, `MAKING_MODS.md`, `NEXUS_LOADER.md` |
+| `docs/` | `MODDING.md` (состояние работ), `FILE_MAP.md`, `EXE_NOTES.md`, `LUA_API.md`, `MAKING_MODS.md`, `NEXUS_LOADER.md` (loader README), `nexus/` (Nexus page texts) |
 
 ### Идеи на будущее
 

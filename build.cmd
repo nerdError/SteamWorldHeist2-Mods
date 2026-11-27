@@ -36,7 +36,7 @@ set RC=%ERRORLEVEL%
 if %RC% neq 0 (
   echo. & echo BUILD FAILED
 ) else if defined DEPLOY (
-  echo. & echo Copied into the game folder. Open SWH2 Mod Loader and click "Apply to game".
+  echo. & echo Copied into the game folder. Open NE Mod Loader ^& Manager and click "Apply to game".
 ) else if "%~1"=="" (
   explorer "%~dp0dist"
 )

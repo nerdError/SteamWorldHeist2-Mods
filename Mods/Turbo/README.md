@@ -1,6 +1,6 @@
-# Turbo Battles — SteamWorld Heist 2
+# NE Turbo Battles — SteamWorld Heist 2
 
-Requires **SWH2 Mod Loader** 1.0+ and the current Steam version of the game.
+Requires **NE Mod Loader & Manager** 1.0+ and the current Steam version of the game.
 
 Cuts the waiting in battles:
 - **Enemy turns** run faster (default ×3).
@@ -19,4 +19,29 @@ If the game is a different build, the mod refuses to install instead of breaking
 Uninstall: untick it and click Apply, or *Restore original files*. Steam "Verify integrity of game files" also restores the exe.
 
 ## Install
-Unpack into the game folder (`SteamWorld Heist 2\Mods\Turbo\mod.json`) or use Vortex, then enable it in SWH2 Mod Loader and click **Apply to game**.
+Unpack into the game folder (`SteamWorld Heist 2\Mods\Turbo\mod.json`) or use Vortex, then enable it in NE Mod Loader & Manager and click **Apply to game**.
+
+---
+
+# NE Turbo Battles — по-русски
+
+Нужен **NE Mod Loader & Manager** 1.0+ и текущая Steam-версия игры.
+
+Меньше ожидания в боях:
+- **Ходы врагов** идут быстрее (по умолчанию ×3).
+- Камера, **показывающая врагов, турели и подкрепления**, работает быстрее (по умолчанию ×6).
+- Катсцены, диалоги, победа/поражение и **ваш собственный ход идут с обычной скоростью**.
+
+Оба множителя — в настройках загрузчика.
+
+Известное ограничение: во время хода врагов ускоряются все анимации сразу (шапки, анимации ожидания) — у движка одни часы.
+
+## Как это работает
+Патчит `SteamWorld Heist 2.exe` (масштаб времени в бою). Загрузчик хранит бэкап оригинального exe, проверяет версию
+перед патчем и при каждой установке собирает заново из бэкапа, так что патчи не накладываются.
+Если сборка игры другая, мод откажется устанавливаться, а не сломает игру.
+
+Удаление: снимите галочку и нажмите Apply или *Restore original files*. Steam → «Проверить целостность файлов» тоже восстановит exe.
+
+## Установка
+Распакуйте в папку игры (`SteamWorld Heist 2\Mods\Turbo\mod.json`) или через Vortex, включите мод в NE Mod Loader & Manager и нажмите **Apply to game**.
