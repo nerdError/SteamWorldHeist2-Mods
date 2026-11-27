@@ -285,6 +285,9 @@ static ULONGLONG autoEnterPressed;
 static ULONGLONG autoCutPolled, autoCutPressed;
 static int autoOn, autoDone, autoPopups, autoKeySc, autoKeySym, autoPhase, windowId = 1;
 static ULONGLONG autoNext, autoPolled, autoPopupSeen, autoKeyUntil;
+/* After "quit": no keys (popups / cutscenes) until a battle runs again, the dll's Continue brings it back. */
+static ULONGLONG autoQuitAt;
+static int autoQuietPopups, autoQuietCutscenes;
 
 static int KeyByName(const char *n, int *sym)
 {
@@ -303,6 +306,14 @@ static void AutoStartKey(int sc, int sym) { autoKeySc = sc; autoKeySym = sym; au
 static void AutoStep(void)
 {
     ULONGLONG now = GetTickCount64();
+    if (autoQuitAt && NetWorldTick() > autoQuitAt + 5000)
+    {
+        autoQuitAt = 0;
+        autoPopups = autoQuietPopups;
+        autoCutscenes = autoQuietCutscenes;
+        autoPopupSeen = NetPopupTick();
+        Log("auto: in a battle again");
+    }
     if (autoPopups && autoPhase == 0)
     {
         ULONGLONG shown = NetPopupTick();
@@ -340,7 +351,15 @@ static void AutoStep(void)
         Log("auto: %s %s", cmd, arg);
         if (strcmp(cmd, "wait") == 0) { autoNext = now + (ULONGLONG)atoi(arg); break; }
         if (strcmp(cmd, "enter") == 0) { autoEnterMs = atoi(arg) > 0 ? atoi(arg) : 2500; autoEnterPressed = now; break; }
-        if (strcmp(cmd, "quit") == 0) { NetQuitToMenu(); continue; }
+        if (strcmp(cmd, "quit") == 0)
+        {
+            autoQuitAt = now;
+            autoQuietPopups = autoPopups;
+            autoQuietCutscenes = autoCutscenes;
+            autoPopups = autoCutscenes = 0;
+            NetQuitToMenu();
+            continue;
+        }
         if (strcmp(cmd, "cutscenes") == 0) { autoCutscenes = strcmp(arg, "on") == 0; continue; }
         if (strcmp(cmd, "popups") == 0) { autoPopups = strcmp(arg, "on") == 0; autoPopupSeen = NetPopupTick(); continue; }
         if (strcmp(cmd, "pad") == 0)
@@ -391,7 +410,7 @@ static int AutoEvent(void *ev)
     *(int *)(e + 16) = autoKeySc;
     *(int *)(e + 20) = autoKeySym;
     if (autoPhase == 1) { autoPhase = 2; autoKeyUntil = now + 100; }
-    else { autoPhase = 0; autoNext = now + 300; }
+    else { autoPhase = 0; if (autoNext < now + 300) autoNext = now + 300; }   /* a running "wait" stays */
     return 1;
 }
 

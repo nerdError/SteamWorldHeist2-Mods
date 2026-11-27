@@ -115,8 +115,10 @@ public static class NetTest
         File.WriteAllLines(AutoScriptFile, script ?? DefaultAutoScript(slot));
         string outLog = replay && !autoplay ? ReplayedLog : RecordLog;
         string? settings = Windowed();
+        var account = SaveBanks.ForGame(game);
+        string? profile = LastSlot(account, slot);
         try { return RunGame(game, replay && !autoplay, timeoutSec, stallSec, outLog, sb, out differs); }
-        finally { if (settings != null) File.WriteAllText(SettingsFile, settings); ClearControlFiles(); }
+        finally { if (settings != null) File.WriteAllText(SettingsFile, settings); PutBack(account, profile); ClearControlFiles(); }
     }
 
     /// <summary>Data folder of the second game copy started (the Coop dll gives it instanceN\, N = 2).</summary>
@@ -171,6 +173,7 @@ public static class NetTest
         sb.AppendLine($"Guest: test start in its slot {slot + 1} ({guestSlot}, what was there kept as .nettest-kept), replays live from 127.0.0.1:{port}.");
 
         string? settings = Windowed();
+        string? hostProfile = LastSlot(account0, slot);
         try
         {
             var started = DateTime.Now;
@@ -278,7 +281,7 @@ public static class NetTest
             sb.Append(Compare(out differs, record: record, replayed: replayed));
             return sb.ToString().TrimEnd();
         }
-        finally { if (settings != null) File.WriteAllText(SettingsFile, settings); ClearControlFiles(); }
+        finally { if (settings != null) File.WriteAllText(SettingsFile, settings); PutBack(account0, hostProfile); ClearControlFiles(); }
     }
 
     /// <summary>
@@ -335,6 +338,28 @@ public static class NetTest
     }
 
     static string SettingsFile => Path.Combine(Dir, "settings.xml");
+
+    /// <summary>
+    /// The slot list and Continue start on the game's last used slot (Session.CurrentProfile in the account's
+    /// settings.xml): a player who played their own save since the last test would get it loaded by the autopilot. The
+    /// test slot is made the last one for the run; returns the old text to put back (null = nothing changed).
+    /// </summary>
+    static string? LastSlot(SaveBanks? account, int slot)
+    {
+        if (account == null) return null;
+        string file = Path.Combine(Path.GetDirectoryName(account.SaveDir)!, "settings.xml");
+        if (!File.Exists(file)) return null;
+        string text = File.ReadAllText(file);
+        string set = System.Text.RegularExpressions.Regex.Replace(text, "Key=\"Session.CurrentProfile\" Value=\"[0-9]+\"", $"Key=\"Session.CurrentProfile\" Value=\"{slot}\"");
+        if (set == text) return null;
+        File.WriteAllText(file, set);
+        return text;
+    }
+
+    static void PutBack(SaveBanks? account, string? text)
+    {
+        if (account != null && text != null) File.WriteAllText(Path.Combine(Path.GetDirectoryName(account.SaveDir)!, "settings.xml"), text);
+    }
 
     /// <summary>Test runs play in a window: Screen.Fullscreen = 0 in the game's settings.xml; returns the old text to put back.</summary>
     static string? Windowed()
