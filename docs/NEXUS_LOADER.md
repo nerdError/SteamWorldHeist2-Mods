@@ -18,11 +18,12 @@ changes never stack and a broken install is one click away from vanilla.
 - `swh2` command-line tool with the same features (for scripts and power users).
 
 ## Requirements
-- SteamWorld Heist 2 (Steam, Windows 10 1903+ or Windows 11).
+- SteamWorld Heist 2 (Steam or GOG, Windows 10 1903+ or Windows 11).
 - Nothing else: the loader runs on .NET Framework 4.8, which is part of Windows.
 
 ## Install
-1. Unpack the archive into the game folder (Steam → right-click the game → Manage → Browse local files).
+1. Unpack the archive into the game folder (Steam → right-click the game → Manage → Browse local files;
+   GOG: usually `C:\GOG Games\SteamWorld Heist 2`).
    You get `SteamWorld Heist 2\SWH2ModLoader\SWH2ModLoader.exe` and a `Mods` folder.
 2. Download mods and unpack them into the game folder too (`SteamWorld Heist 2\Mods\<Mod>\mod.json`),
    or drop their `.zip` on the mod list.
@@ -77,11 +78,12 @@ C# plugin that edits the game data or patches the exe, with settings the loader 
 - Консольная утилита `swh2` с теми же возможностями.
 
 ## Требования
-- SteamWorld Heist 2 (Steam, Windows 10 1903+ или Windows 11).
+- SteamWorld Heist 2 (Steam или GOG, Windows 10 1903+ или Windows 11).
 - Больше ничего: загрузчик работает на .NET Framework 4.8, он входит в Windows.
 
 ## Установка
-1. Распакуйте архив в папку игры (Steam → ПКМ по игре → Управление → Просмотреть локальные файлы).
+1. Распакуйте архив в папку игры (Steam → ПКМ по игре → Управление → Просмотреть локальные файлы;
+   GOG: обычно `C:\GOG Games\SteamWorld Heist 2`).
    Получится `SteamWorld Heist 2\SWH2ModLoader\SWH2ModLoader.exe` и папка `Mods`.
 2. Моды тоже распакуйте в папку игры (`SteamWorld Heist 2\Mods\<Мод>\mod.json`) или перетащите их `.zip` на список модов.
 3. Запустите `SWH2ModLoader.exe`, отметьте моды, настройте их, нажмите **Apply to game**. Игра должна быть закрыта.

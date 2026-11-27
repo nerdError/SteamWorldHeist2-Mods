@@ -56,13 +56,18 @@ class Exe:
             if len(out) >= n: break
         return out
 
-    def func_start(self, rva):
-        """Find containing function via .pdata (x64 unwind table)."""
+    @functools.cached_property
+    def _pdata(self):
         self.pe.parse_data_directories([pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_EXCEPTION']])
-        for e in getattr(self.pe, 'DIRECTORY_ENTRY_EXCEPTION', []):
-            if e.struct.BeginAddress <= rva < e.struct.EndAddress:
-                return e.struct.BeginAddress, e.struct.EndAddress
-        return None
+        ranges = sorted((e.struct.BeginAddress, e.struct.EndAddress) for e in getattr(self.pe, 'DIRECTORY_ENTRY_EXCEPTION', []))
+        return ranges, [b for b, _ in ranges]
+
+    def func_start(self, rva):
+        """Find containing function via .pdata (x64 unwind table): (begin, end) or None."""
+        import bisect
+        ranges, begins = self._pdata
+        i = bisect.bisect_right(begins, rva) - 1
+        return ranges[i] if i >= 0 and ranges[i][0] <= rva < ranges[i][1] else None
 
 def xrefs_any(x, target, slack=(0, 1, 4)):
     """Brute-force RIP-relative references: disp32 at offset j with j+4+imm+disp == target.

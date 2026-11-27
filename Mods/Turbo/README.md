@@ -1,13 +1,14 @@
 # NE Turbo Battles — SteamWorld Heist 2
 
-Requires **NE Mod Loader & Manager** 1.0+ and the current Steam version of the game.
+Requires **NE Mod Loader & Manager** 1.2+ and the current Steam or GOG version of the game.
 
 Cuts the waiting in battles:
 - **Enemy turns** run faster (default ×3).
 - The camera **introducing enemies, turrets and reinforcements** runs faster (default ×6).
-- Cutscenes, dialogue, victory/defeat and **your own turn stay at normal speed**.
+- **Your own turn** can run faster too (setting "Your turn speed", default ×1 = normal).
+- Cutscenes, dialogue and victory/defeat always stay at normal speed.
 
-Both multipliers are settings in the loader.
+All multipliers are settings in the loader.
 
 Known limitation: during enemy turns all animations speed up together (hats, idle animations) — the engine has one clock.
 
@@ -25,14 +26,15 @@ Unpack into the game folder (`SteamWorld Heist 2\Mods\Turbo\mod.json`) or use Vo
 
 # NE Turbo Battles — по-русски
 
-Нужен **NE Mod Loader & Manager** 1.0+ и текущая Steam-версия игры.
+Нужен **NE Mod Loader & Manager** 1.2+ и текущая Steam- или GOG-версия игры.
 
 Меньше ожидания в боях:
 - **Ходы врагов** идут быстрее (по умолчанию ×3).
 - Камера, **показывающая врагов, турели и подкрепления**, работает быстрее (по умолчанию ×6).
-- Катсцены, диалоги, победа/поражение и **ваш собственный ход идут с обычной скоростью**.
+- **Свой ход** тоже можно ускорить (настройка «Your turn speed», по умолчанию ×1 — обычная скорость).
+- Катсцены, диалоги и победа/поражение всегда идут с обычной скоростью.
 
-Оба множителя — в настройках загрузчика.
+Все множители — в настройках загрузчика.
 
 Известное ограничение: во время хода врагов ускоряются все анимации сразу (шапки, анимации ожидания) — у движка одни часы.
 

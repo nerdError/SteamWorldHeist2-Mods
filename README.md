@@ -10,7 +10,7 @@
 ## English
 
 **SteamWorld Heist 2 Randomizer** (SWH2 randomizer) — a seeded randomizer mod that shuffles missions, item rewards,
-shops, enemies, weapon stats, class perks, prices and dialogue, plus a mod loader / mod manager and other mods for SteamWorld Heist 2 (PC, Steam):
+shops, enemies, weapon stats, class perks, prices and dialogue, plus a mod loader / mod manager and other mods for SteamWorld Heist 2 (PC, Steam and GOG):
 turbo battles, challenges and a cheat menu.
 
 ### SteamWorld Heist 2 Randomizer
@@ -29,7 +29,7 @@ Details: [Mods/Randomizer/README.md](Mods/Randomizer/README.md).
 
 ### Mod loader
 
-A mod manager / modding framework for **SteamWorld Heist 2** and four mods built on it. Everything targets
+A mod manager / modding framework for **SteamWorld Heist 2** and the mods built on it. Everything targets
 **.NET Framework 4.8**, which ships with Windows 10 (1903+) and 11 — players don't need to install anything.
 
 | What | Folder | Nexus archive |
@@ -40,6 +40,7 @@ A mod manager / modding framework for **SteamWorld Heist 2** and four mods built
 | **NE Challenge Manager** — challenges: "no grind", "no checkpoints" | `Mods/Challenges` | `Challenges-<ver>.zip` |
 | **NE Cheat Menu** — in-mission cheats: a loader window + hotkeys, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
 | **NE More Save Slots** — 4–10 save slots in the main menu instead of 3 (exe patch) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
+| **NE Co-op Missions** — missions with 2–4 friends over Parsec: the crew is split, each player's gamepad / keyboard+mouse controls only their bots (exe patch + native dll) | `Mods/Coop` | `Coop-<ver>.zip` |
 
 Nexus page texts: [docs/nexus/](docs/nexus/) (summary + BBCode description per mod).
 How to make mods: [docs/MAKING_MODS.md](docs/MAKING_MODS.md).
@@ -96,12 +97,12 @@ swh2 saves                                  # save slots + save banks; saves sto
 swh2 roundtrip                              # self-test: XML survives a lossless round trip
 swh2 cheat win|heal|...                     # Cheat Menu command (swh2 help lists all mod commands)
 ```
-Game path: the folder the loader sits in (`<game>\SWH2ModLoader\`), else Steam libraries, else `--game DIR`.
+Game path: the folder the loader sits in (`<game>\SWH2ModLoader\`), else Steam libraries, else GOG, else `--game DIR`.
 
 ### Building and releasing
 
 Requires the .NET SDK (8+; tested on 10) — it also builds the `net48` projects (reference assemblies come from NuGet).
-**To build everything, double-click `build.cmd`**; **to build and copy into the game folder, double-click `deploy.cmd`** (to make `build.cmd` always copy too, copy `build.local.example.cmd` to `build.local.cmd` and set `AUTO_DEPLOY=1`; same as `build.cmd deploy`;
+**To build everything, double-click `build.cmd`**; **to build and copy into the game folder, double-click `deploy.cmd`** (to make `build.cmd` always copy too, copy `build.local.example.cmd` to `build.local.cmd` and set `AUTO_DEPLOY=1`; same as `build.cmd deploy`; there `GAME_DIRS` lists several game folders, e.g. Steam + GOG, and `RESTART_LOADER=1` restarts an open loader with `--apply` so the new mods go straight into the game;
 `build.cmd deploy "D:\...\SteamWorld Heist 2"` for another folder). Output goes to `dist\`:
 
 | What | Why |
@@ -137,6 +138,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | `Mods/Turbo/` | battle time-scale patch (code from `exe_patch.py`, ported as bytes + a relocation table) |
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
 | `Mods/MoreSlots/` | save slot count patch (exe, 7 hard-coded limits) + shorter slot buttons in `UI/ui.me` |
+| `Mods/Coop/` | Lua backend (owner assignment) and mission hook (owner labels), `coop_owner_N` modifiers/strings, input lock (`native/swh2coop.c`: SDL input filter dll loaded by an exe patch before `SDL_Init`, built with VS C++ tools; offline test `native/test.cmd`); shares `Challenges/MissionScripts.cs` |
 | `Mods/CheatMenu/` | Lua backend and mission hook (`Lua/*.lua`, embedded in the dll), modifiers, `CheatForm` window, `CheatClient` (file-based protocol) |
 | `tools/package.ps1` | builds the Nexus archives |
 | `tools/re/`, `tools/mods/` | developer tools (exe RE, Lua mod generators, sandbox simulator) |
@@ -176,7 +178,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 
 ### Загрузчик модов
 
-Менеджер модов / фреймворк для модов **SteamWorld Heist 2** и четыре мода на нём. Всё на **.NET Framework 4.8** —
+Менеджер модов / фреймворк для модов **SteamWorld Heist 2** и моды на нём. Всё на **.NET Framework 4.8** —
 он встроен в Windows 10 (1903+) и 11, игрокам ничего не нужно докачивать.
 
 | Что | Папка | Архив для Nexus |
@@ -187,6 +189,7 @@ Versions: loader — `<Version>` in `SWH2.Core.csproj`; mod — `version` in its
 | **NE Challenge Manager** — челленджи: «без гринда», «без чекпоинтов» | `Mods/Challenges` | `Challenges-<ver>.zip` |
 | **NE Cheat Menu** — читы в миссиях: окно в загрузчике + горячие клавиши, `swh2 cheat` | `Mods/CheatMenu` | `CheatMenu-<ver>.zip` |
 | **NE More Save Slots** — 4–10 слотов сохранения в главном меню вместо 3 (патч exe) | `Mods/MoreSlots` | `MoreSlots-<ver>.zip` |
+| **NE Co-op Missions** — миссии с 2–4 друзьями через Parsec: команда поделена, геймпад / клавиатура+мышь каждого управляет только его ботами (патч exe + нативная dll) | `Mods/Coop` | `Coop-<ver>.zip` |
 
 Тексты для страниц Nexus: [docs/nexus/](docs/nexus/) (краткое описание + BBCode для каждого мода).
 Как делать моды: [docs/MAKING_MODS.md](docs/MAKING_MODS.md).
@@ -247,12 +250,12 @@ swh2 saves                                  # слоты и банки сохр�
 swh2 roundtrip                              # самопроверка: XML сохраняется без потерь
 swh2 cheat win|heal|...                     # команда мода Cheat Menu (swh2 help — все команды модов)
 ```
-Путь к игре: папка, где лежит загрузчик (`<игра>\SWH2ModLoader\`), иначе Steam-библиотеки, иначе `--game DIR`.
+Путь к игре: папка, где лежит загрузчик (`<игра>\SWH2ModLoader\`), иначе Steam-библиотеки, иначе GOG, иначе `--game DIR`.
 
 ### Сборка и выпуск
 
 Требуется .NET SDK (8+; проверено на 10) — он собирает и проекты под `net48` (референс-сборки тянутся из NuGet).
-**Просто собрать всё — двойной клик по `build.cmd`**; **собрать и сразу поставить в папку игры — двойной клик по `deploy.cmd`** (чтобы `build.cmd` всегда копировал сам — скопируйте `build.local.example.cmd` в `build.local.cmd` и поставьте `AUTO_DEPLOY=1`; то же, что `build.cmd deploy`;
+**Просто собрать всё — двойной клик по `build.cmd`**; **собрать и сразу поставить в папку игры — двойной клик по `deploy.cmd`** (чтобы `build.cmd` всегда копировал сам — скопируйте `build.local.example.cmd` в `build.local.cmd` и поставьте `AUTO_DEPLOY=1`; то же, что `build.cmd deploy`; там же `GAME_DIRS` — несколько папок игры, например Steam + GOG, а `RESTART_LOADER=1` перезапускает открытый загрузчик с `--apply`, и новые моды сразу ставятся в игру;
 `build.cmd deploy "D:\...\SteamWorld Heist 2"` — другая папка). Результат в `dist\`:
 
 | Что | Зачем |
@@ -292,6 +295,7 @@ PolySharp (полифиллы на этапе компиляции), недос�
 | `Mods/Challenges/` | `NoGrind` (XML), `NoCheckpoints` (exe) |
 | `Mods/MoreSlots/` | патч числа слотов сохранения (exe, 7 зашитых ограничений) + кнопки слотов пониже в `UI/ui.me` |
 | `Mods/MoreSlots/` | save slot count patch (exe, 7 hard-coded limits) + shorter slot buttons in `UI/ui.me` |
+| `Mods/Coop/` | Lua-бэкенд (распределение ботов) и хук миссий (имена владельцев), модификаторы/строки `coop_owner_N`, блокировка ввода (`native/swh2coop.c`: dll-фильтр ввода SDL, грузится патчем exe перед `SDL_Init`, собирается VS C++; офлайн-тест `native/test.cmd`); общий `Challenges/MissionScripts.cs` |
 | `Mods/CheatMenu/` | Lua-бэкенд и хук миссий (`Lua/*.lua`, встроены в dll), модификаторы, окно `CheatForm`, `CheatClient` (файловый протокол) |
 | `tools/package.ps1` | сборка архивов для Nexus |
 | `tools/re/`, `tools/mods/` | инструменты разработчика (RE exe, генераторы Lua-модов, симулятор песочницы) |

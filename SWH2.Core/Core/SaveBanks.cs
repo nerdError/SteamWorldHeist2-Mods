@@ -21,12 +21,19 @@ public sealed class SaveBanks
     public static string SavesRoot => Path.Combine(AppData, "Thunderful", "SteamWorld Heist II");
     static string BanksRoot => Path.Combine(AppData, "SWH2ModLoader", "SaveBanks");
 
-    SaveBanks(string accountId)
+    SaveBanks(string accountId, string? saveDir = null)
     {
         AccountId = accountId;
-        SaveDir = Path.Combine(SavesRoot, accountId, "Save000");
+        SaveDir = saveDir ?? Path.Combine(SavesRoot, accountId, "Save000");
         BanksDir = Path.Combine(BanksRoot, accountId);
     }
+
+    /// <summary>
+    /// The saves a game copy uses: Steam = the most recently saved account; GOG = &lt;saves&gt;\Save000 (no account folder),
+    /// banks under "gog". Null when a Steam copy has no saves yet.
+    /// </summary>
+    public static SaveBanks? ForGame(GameInstall game) =>
+        game.Store == "GOG" ? new SaveBanks("gog", Path.Combine(SavesRoot, "Save000")) : Accounts().FirstOrDefault();
 
     public string AccountId { get; }
     public string SaveDir { get; }
@@ -151,6 +158,28 @@ public sealed class SaveBanks
         else File.Delete(SlotBackup(slot));
         return auto;
     }
+
+    /// <summary>
+    /// Puts a save file's bytes into a slot (e.g. one received over the network); a used slot is first stored as an
+    /// "auto …" bank (returned). The game must be closed.
+    /// </summary>
+    public Bank? Put(int slot, byte[] dat)
+    {
+        Bank? auto = null;
+        if (File.Exists(SlotFile(slot)))
+        {
+            auto = Store(slot, $"{AutoPrefix}{DateTime.Now:yyyy-MM-dd HH-mm-ss} slot {slot + 1}", overwrite: true);
+            PruneAuto();
+        }
+        Directory.CreateDirectory(SaveDir);
+        File.WriteAllBytes(SlotFile(slot) + ".tmp", dat);
+        File.Copy(SlotFile(slot) + ".tmp", SlotFile(slot), true);
+        File.Delete(SlotFile(slot) + ".tmp");
+        File.Delete(SlotBackup(slot));
+        return auto;
+    }
+
+    public string SlotPath(int slot) => SlotFile(slot);
 
     public void Delete(string name)
     {

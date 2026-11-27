@@ -1,0 +1,14 @@
+{
+  "id": "QuickStart",
+  "name": "NE Quick Start",
+  "version": "1.0.0",
+  "author": "nerderror",
+  "description": "Gets you into the game faster: skips the logo movie at start. Patches the game exe (current Steam and GOG versions).",
+  "plugin": "SWH2.Mod.QuickStart.dll",
+  "order": 310,
+  "minLoaderVersion": "1.2.0",
+  "patchesExe": true,
+  "settings": [
+    { "id": "skipIntro", "type": "bool", "label": "Skip the logo movie at start", "default": true }
+  ]
+}

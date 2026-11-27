@@ -12,7 +12,7 @@ Optional rules for harder runs; each one has its own switch.
 
 **Hardcore**
 - *No checkpoints*: "Load Checkpoint" is disabled in missions (pause menu and the objective-failed popup).
-  Patches the game exe (current Steam version only; the loader checks it and keeps a backup).
+  Patches the game exe (current Steam and GOG versions; the loader checks it and keeps a backup).
 - *Quitting mid-mission forfeits it*: the game saves missions about once per turn, so quitting and pressing
   Continue would rewind the turn. With this on, continuing a mission from a save sends you back to the world map,
   like Abort. A crash mid-mission costs the mission too. The ship, bars, shops, the tutorial and the prison break
@@ -54,7 +54,7 @@ NE Mod Loader & Manager, choose the challenges and click **Apply to game**.
 
 **Хардкор**
 - *Без чекпоинтов*: «Load Checkpoint» в миссиях отключён (в меню паузы и в окне проваленной цели).
-  Патчит exe игры (только текущая Steam-версия; загрузчик её проверяет и хранит бэкап).
+  Патчит exe игры (текущие Steam- и GOG-версии; загрузчик её проверяет и хранит бэкап).
 - *Выход из миссии = отступление*: игра сохраняет миссию примерно раз в ход, поэтому выход и «Продолжить»
   отматывали бы ход. С этой опцией продолжение миссии из сохранения возвращает на карту мира, как Abort.
   Вылет посреди миссии тоже стоит миссии. Корабль, бары, магазины, обучение и побег из тюрьмы

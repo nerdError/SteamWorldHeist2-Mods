@@ -2,18 +2,19 @@
 -- Engine functions are not visible here; mission scripts run the actual cheats (see the appended hook).
 Cheats = {}
 
-local function datadir()
-	local appdata = os and os.getenv and os.getenv("APPDATA")
-	if appdata then return appdata .. "\\Thunderful\\SteamWorld Heist II\\" end
-	return ""
+-- File in the data folder of this copy of the game: SWH2_INSTANCE_DIR ("instanceN\") is set by the Coop dll for the
+-- 2nd+ copy running on one PC. Read on every use, in case it is set after this file is loaded.
+local function file(name)
+	local getenv = os and os.getenv
+	return ((getenv and getenv("APPDATA")) or "") .. "\\Thunderful\\SteamWorld Heist II\\" ..
+		((getenv and getenv("SWH2_INSTANCE_DIR")) or "") .. name
 end
 
-local DIR = datadir()
-local CMD = DIR .. "swh2_cheats_cmd.txt"
+local CMD = "swh2_cheats_cmd.txt"
 local WORK = CMD .. ".work"
-local LOG = DIR .. "swh2_cheats.log"
-local STATE = DIR .. "swh2_cheats_state.txt"
-local STATUS = DIR .. "swh2_cheats_status.txt"
+local LOG = "swh2_cheats.log"
+local STATE = "swh2_cheats_state.txt"
+local STATUS = "swh2_cheats_status.txt"
 local TOGGLES = { god = true, freeze = true, spinup = true }
 local MAX_AGE = 10
 
@@ -22,7 +23,7 @@ local frame = 0
 Cheats.script = "?"
 
 function Cheats.log(msg)
-	local f = io.open(LOG, "a")
+	local f = io.open(file(LOG), "a")
 	if f then f:write(os.date("%Y-%m-%d %H:%M:%S"), "  ", tostring(msg), "\n"); f:close() end
 end
 
@@ -37,7 +38,7 @@ function Cheats.flag(name) return flags[name] == true end
 
 local function readFlags()
 	flags = {}
-	local f = io.open(STATE, "r")
+	local f = io.open(file(STATE), "r")
 	if not f then return end
 	for line in f:lines() do
 		local k, v = line:match("^(%w+)=(%d)")
@@ -47,14 +48,14 @@ local function readFlags()
 end
 
 local function writeFlags()
-	local f = io.open(STATE, "w")
+	local f = io.open(file(STATE), "w")
 	if not f then return end
 	for k in pairs(TOGGLES) do f:write(k, "=", flags[k] and "1" or "0", "\n") end
 	f:close()
 end
 
 local function writeStatus()
-	local f = io.open(STATUS, "w")
+	local f = io.open(file(STATUS), "w")
 	if not f then return end
 	f:write("script=", Cheats.script, "\n", "time=", tostring(os.time()), "\n")
 	for k in pairs(TOGGLES) do f:write(k, "=", flags[k] and "1" or "0", "\n") end
@@ -80,9 +81,9 @@ function Cheats.Tick()
 	local cmds, sync = {}, frame % 60 == 1
 	if frame % 120 == 1 then writeStatus() end
 	if frame % 15 ~= 1 then return cmds, sync end
-	os.remove(WORK)
-	if not os.rename(CMD, WORK) then return cmds, sync end
-	local f = io.open(WORK, "r")
+	os.remove(file(WORK))
+	if not os.rename(file(CMD), file(WORK)) then return cmds, sync end
+	local f = io.open(file(WORK), "r")
 	if not f then return cmds, sync end
 	local now, changed = os.time(), false
 	for line in f:lines() do
@@ -100,7 +101,7 @@ function Cheats.Tick()
 		end
 	end
 	f:close()
-	os.remove(WORK)
+	os.remove(file(WORK))
 	if changed then writeFlags(); writeStatus(); sync = true end
 	return cmds, sync
 end

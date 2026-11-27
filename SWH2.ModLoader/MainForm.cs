@@ -17,7 +17,8 @@ public sealed class MainForm : Form
     ModProfile _profile = new();
     List<ModManifest> _mods = [];
     readonly Dictionary<string, ModSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
-    bool _loadingList;
+    bool _loadingList, _busy;
+    readonly bool _autoApply;
 
     // Game folder
     readonly TextBox _gamePath = new() { Dock = DockStyle.Fill };
@@ -60,8 +61,11 @@ public sealed class MainForm : Form
     readonly FlowLayoutPanel _tools = new() { AutoSize = true, WrapContents = false, Margin = new Padding(16, 0, 0, 0) };
     readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Font = new Font("Consolas", 9.5F) };
 
-    public MainForm()
+    /// <param name="game">Game folder to open (null: the one the loader sits in, else the last used, else auto-detect).</param>
+    /// <param name="autoApply">Apply to the game as soon as the window is shown (see Program).</param>
+    public MainForm(string? game = null, bool autoApply = false)
     {
+        _autoApply = autoApply;
         Text = $"NE Mod Loader & Manager {ModCatalog.LoaderVersion.ToString(3)} — SteamWorld Heist 2";
         Font = new Font("Segoe UI", 10F);
         AutoScaleMode = AutoScaleMode.Font;
@@ -78,7 +82,9 @@ public sealed class MainForm : Form
 
         BuildLayout();
         WireEvents();
-        _gamePath.Text = _app.GamePath is { } p && GameInstall.IsValid(p) ? p : GameInstall.TryDetect() ?? _app.GamePath ?? "";
+        // A loader inside a game folder manages that game (a Steam and a GOG copy each have their own loader).
+        _gamePath.Text = game ?? GameInstall.FromLoaderLocation()
+            ?? (_app.GamePath is { } p && GameInstall.IsValid(p) ? p : GameInstall.TryDetect() ?? _app.GamePath ?? "");
         ValidateGamePath();
     }
 
@@ -107,10 +113,13 @@ public sealed class MainForm : Form
         browse.Click += (_, _) => BrowseGame();
         detect.Click += (_, _) =>
         {
-            var found = GameInstall.TryDetect();
-            if (found != null) _gamePath.Text = found;
-            else MessageBox.Show(this, "Couldn't find the game in your Steam libraries. Use Browse….", Text);
+            // Several installs (Steam + GOG): each click goes to the next one.
+            var found = GameInstall.DetectAll();
+            int at = found.FindIndex(f => string.Equals(f, _gamePath.Text.Trim().TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
+            if (found.Count > 0) _gamePath.Text = found[(at + 1) % found.Count];
+            else MessageBox.Show(this, "Couldn't find the game in your Steam libraries or GOG folders. Use Browse….", Text);
         };
+        _tips.SetToolTip(detect, "Find the game (Steam libraries, GOG). With several installs, each click shows the next one.");
         gameGrid.Controls.Add(_gamePath, 0, 0);
         gameGrid.Controls.Add(browse, 1, 0);
         gameGrid.Controls.Add(detect, 2, 0);
@@ -231,16 +240,7 @@ public sealed class MainForm : Form
         };
         _remove.Click += (_, _) => RemoveSelected();
 
-        _apply.Click += (_, _) =>
-        {
-            var profile = SnapshotProfile();
-            RunTask("Applying", (g, log) =>
-            {
-                Pipeline.Install(g, profile, log);
-                profile.Save(g);
-                BeginInvoke(() => { _profile = profile; ReloadSettingsFromProfile(); });
-            });
-        };
+        _apply.Click += (_, _) => Apply(auto: false);
         _restore.Click += (_, _) => RunTask("Restoring", Pipeline.Restore);
         _extract.Click += (_, _) =>
         {
@@ -263,8 +263,15 @@ public sealed class MainForm : Form
             using var form = new SaveBanksForm(SnapshotProfile().SaveSlots(g));
             form.ShowDialog(this);
         };
-        FormClosing += (_, _) =>
+        FormClosing += (_, e) =>
         {
+            if (_busy && e.CloseReason == CloseReason.UserClosing)
+            {
+                // Closing mid-apply would leave half-written game files (build.cmd waits, then skips this folder).
+                e.Cancel = true;
+                Log("Still working — close the window when it's done.");
+                return;
+            }
             _app.Maximized = WindowState == FormWindowState.Maximized;
             var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
             (_app.WindowWidth, _app.WindowHeight) = (bounds.Width, bounds.Height);
@@ -280,7 +287,9 @@ public sealed class MainForm : Form
     void ValidateGamePath()
     {
         var g = Game;
-        _pathStatus.Text = g != null ? "✔ Game found" : "✘ Not a SteamWorld Heist 2 folder (Bundle\\Core\\Game.pak missing)";
+        // Tells two loader windows apart (Steam + GOG copy).
+        Text = $"NE Mod Loader & Manager {ModCatalog.LoaderVersion.ToString(3)} — SteamWorld Heist 2{(g != null ? $" ({g.Store})" : "")}";
+        _pathStatus.Text = g != null ? $"✔ Game found ({g.Store})" : "✘ Not a SteamWorld Heist 2 folder (Bundle\\Core\\Game.pak missing)";
         _pathStatus.ForeColor = g != null ? Color.FromArgb(0, 150, 0) : Color.FromArgb(192, 0, 0);
         foreach (var b in new[] { _apply, _play, _saveBanks, _restore, _extract, _openTool, _installZip }) b.Enabled = g != null;
         _profile = g != null ? ModProfile.Load(g) : new();
@@ -535,12 +544,31 @@ public sealed class MainForm : Form
         if (dlg.ShowDialog(this) == DialogResult.OK) _gamePath.Text = dlg.SelectedPath;
     }
 
-    void RunTask(string what, Action<GameInstall, Action<string>> work, bool needsGameClosed = true)
+    /// <summary>Builds the game files from the enabled mods. <paramref name="auto"/>: started by --apply (no message boxes).</summary>
+    void Apply(bool auto)
+    {
+        var profile = SnapshotProfile();
+        RunTask(auto ? "Applying the updated mods (--apply)" : "Applying", (g, log) =>
+        {
+            Pipeline.Install(g, profile, log);
+            profile.Save(g);
+            BeginInvoke(() => { _profile = profile; ReloadSettingsFromProfile(); });
+        }, quiet: auto);
+    }
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        if (_autoApply) BeginInvoke(() => { if (Game != null) Apply(auto: true); });
+    }
+
+    void RunTask(string what, Action<GameInstall, Action<string>> work, bool needsGameClosed = true, bool quiet = false)
     {
         if (Game is not { } game) return;
-        if (needsGameClosed && Process.GetProcessesByName("SteamWorld Heist 2").Length > 0)
+        if (needsGameClosed && game.IsRunning)
         {
-            MessageBox.Show(this, "Close the game first — its files are in use.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (quiet) Log($"=== {what}: skipped, the game is running. Close it and click Apply to game.");
+            else MessageBox.Show(this, "Close the game first — its files are in use.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         SaveAll();
@@ -565,11 +593,10 @@ public sealed class MainForm : Form
     void LaunchGame()
     {
         if (Game is not { } g) return;
-        if (Process.GetProcessesByName("SteamWorld Heist 2").Length > 0)
-        {
-            MessageBox.Show(this, "The game is already running.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        if (g.IsRunning && MessageBox.Show(this,
+                "This copy of the game is already running. Start another one (e.g. to test multiplayer on one PC)?",
+                Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
             return;
-        }
         SaveAll();
         try
         {
@@ -582,6 +609,7 @@ public sealed class MainForm : Form
 
     void SetBusy(bool busy)
     {
+        _busy = busy;
         UseWaitCursor = busy;
         foreach (var b in new[] { _apply, _play, _restore, _extract, _installZip, _remove }) b.Enabled = !busy;
         _list.Enabled = !busy;

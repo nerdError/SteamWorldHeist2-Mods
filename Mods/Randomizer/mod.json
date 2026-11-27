@@ -1,7 +1,7 @@
 {
   "id": "Randomizer",
   "name": "NE Randomizer",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "author": "nerderror",
   "description": "Shuffles missions on the world map, fixed item rewards (optionally story key items, with logic), shop stock, enemies, enemy hats, weapon stats, projectiles, utility and ability stats, class perks, crew stats, prices, and for fun: dialogue, barks, names, music, mission lighting, weapon models, crew hats and NPC looks. Two presets: Balanced and Chaos, plus quick switches for all modes and for groups of options. Same seed = same game. Writes a spoiler log to SWH2ModLoader/Reports/Randomizer.",
   "plugin": "SWH2.Mod.Randomizer.dll",

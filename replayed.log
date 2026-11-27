@@ -1,0 +1,12 @@
+# mission script west_caribbea_23
+turn cowbots player
+turn navy
+turn cowbots player
+turn navy
+# FIX 1: actor 41 (ordinal 0) not here
+# FIX 1: actor 102 is not in the record's state, killed
+# FIX 1: actor 101 is not in the record's state, killed
+# FIX 1: actor 201 is not in the record's state, killed
+fix 1 moved=0 health=0 killed=3 missing=1
+# cutscene on (conversation)
+state 101@101.00,0.00#5 102@102.00,0.00#5 201@201.00,0.00#5

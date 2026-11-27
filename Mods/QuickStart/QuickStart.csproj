@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.QuickStart</AssemblyName>
+    <RootNamespace>SWH2.Mods.QuickStart</RootNamespace>
+  </PropertyGroup>
+
+</Project>

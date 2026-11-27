@@ -11,7 +11,18 @@ public static class CheatClient
     public static readonly string[] Actions = ["win", "heal", "kill", "weaken", "alarm_off", "give"];
     public static readonly string[] Toggles = ["god", "freeze", "spinup"];
 
-    public static string DataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Thunderful", "SteamWorld Heist II");
+    /// <summary>
+    /// Data folder of the first copy of the game. With several copies running (multiplayer tests; the Coop dll gives
+    /// the 2nd+ one its own instanceN\ folder), set SWH2_INSTANCE=N for the loader / swh2 to talk to that one.
+    /// </summary>
+    public static string DataDir
+    {
+        get
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Thunderful", "SteamWorld Heist II");
+            return int.TryParse(Environment.GetEnvironmentVariable("SWH2_INSTANCE"), out var n) && n > 1 ? Path.Combine(dir, $"instance{n}") : dir;
+        }
+    }
     static string CmdFile => Path.Combine(DataDir, "swh2_cheats_cmd.txt");
     static string StatusFile => Path.Combine(DataDir, "swh2_cheats_status.txt");
     public static string LogFile => Path.Combine(DataDir, "swh2_cheats.log");

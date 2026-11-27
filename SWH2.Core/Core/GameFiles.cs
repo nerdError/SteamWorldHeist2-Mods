@@ -44,7 +44,7 @@ public sealed class GameFiles
         if (_state.InstalledHashes.ContainsKey(pak))
             throw new InvalidOperationException(
                 $"{pak} was modified by this tool but its backup is missing. " +
-                "Use Steam → Properties → Installed Files → Verify integrity of game files.");
+                "Verify game files (Steam: Properties → Installed Files → Verify integrity; GOG Galaxy: Manage installation → Verify / Repair).");
         return _game.PakPath(pak);
     }
 
@@ -71,7 +71,7 @@ public sealed class GameFiles
     {
         var hash = Hash(_game.ExePath);
         if (_state.InstalledHashes.TryGetValue(Exe, out var inst) && inst == hash) return "patched by mods";
-        if (hash == ExeImage.SupportedSha256) return "original";
+        if (GameBuild.FromSha256(hash) is { } build) return $"original ({build.Name})";
         if (IsLegacyPatch()) return "patched by the old exe_patch.py (will be replaced on next apply)";
         return "unknown version — exe mods unavailable";
     }
@@ -90,7 +90,7 @@ public sealed class GameFiles
             {
                 if (installed == curHash)
                     throw new InvalidOperationException(
-                        $"{pak} is modified by this tool but its backup is missing. Verify game files in Steam first.");
+                        $"{pak} is modified by this tool but its backup is missing. Verify game files in Steam / GOG Galaxy first.");
                 File.Copy(cur, bak, true);
                 _state.BackupHashes[pak] = curHash;
                 _state.InstalledHashes.Remove(pak);
@@ -151,8 +151,8 @@ public sealed class GameFiles
     // ---- exe ------------------------------------------------------------------------------
 
     /// <summary>
-    /// The pristine exe for mods to patch. Throws when the installed game isn't the supported build
-    /// (exe mods only work with known addresses); pak mods are not affected by this.
+    /// The pristine exe for mods to patch. Throws when the installed game isn't a known build (Steam or GOG:
+    /// exe mods only work with known addresses); pak mods are not affected by this.
     /// </summary>
     public byte[] ReadOriginalExe()
     {
@@ -160,9 +160,9 @@ public sealed class GameFiles
         var data = File.ReadAllBytes(File.Exists(bak) ? bak : _game.ExePath);
         if (!ExeImage.IsSupported(data))
             throw new NotSupportedException(File.Exists(bak)
-                ? $"The backed-up exe ({bak}) is not the supported game build, so exe mods are unavailable."
-                : $"{Exe} is not the original supported build (already patched by another tool, or a different version). " +
-                  "Verify game files in Steam to use exe mods.");
+                ? $"The backed-up exe ({bak}) is not a supported game build (Steam / GOG), so exe mods are unavailable."
+                : $"{Exe} is not an original supported build (already patched by another tool, or a different version). " +
+                  "Verify game files in Steam / GOG Galaxy to use exe mods.");
         return data;
     }
 
@@ -174,7 +174,7 @@ public sealed class GameFiles
             if (_state.InstalledHashes.ContainsKey(Exe) || IsLegacyPatch())
             {
                 var bak = _game.BackupPath(Exe);
-                if (!File.Exists(bak)) { _log($"{Exe}: backup missing! Verify game files in Steam to restore it."); return; }
+                if (!File.Exists(bak)) { _log($"{Exe}: backup missing! Verify game files in Steam / GOG Galaxy to restore it."); return; }
                 if (Hash(_game.ExePath) != Hash(bak))
                 {
                     WriteInPlace(_game.ExePath, File.ReadAllBytes(bak));
@@ -193,7 +193,7 @@ public sealed class GameFiles
             File.Copy(_game.ExePath, backup);  // ReadOriginalExe already checked that the live exe is the original
             _log($"Backed up original {Exe}.");
         }
-        _state.BackupHashes[Exe] = ExeImage.SupportedSha256;
+        _state.BackupHashes[Exe] = Hash(backup);
         WriteInPlace(_game.ExePath, patched);
         _state.InstalledHashes[Exe] = Hash(_game.ExePath);
         _state.InstalledAt = DateTime.Now;
@@ -206,7 +206,7 @@ public sealed class GameFiles
     bool IsLegacyPatch()
     {
         var bak = _game.BackupPath(Exe);
-        if (!File.Exists(bak) || !File.Exists(_game.ExePath) || Hash(bak) != ExeImage.SupportedSha256) return false;
+        if (!File.Exists(bak) || !File.Exists(_game.ExePath) || Hash(bak) != GameBuild.Steam.Sha256) return false;
         var cur = File.ReadAllBytes(_game.ExePath);
         if (ExeImage.IsSupported(cur)) return false;
         try
@@ -234,7 +234,7 @@ public sealed class GameFiles
             if (!File.Exists(bak))
             {
                 if (_state.InstalledHashes.ContainsKey(pak))
-                    _log($"{pak}: backup missing! Verify game files in Steam to restore it.");
+                    _log($"{pak}: backup missing! Verify game files in Steam / GOG Galaxy to restore it.");
                 continue;
             }
             if (Hash(_game.PakPath(pak)) != (_state.BackupHashes.GetValueOrDefault(pak) ?? Hash(bak)))

@@ -1,0 +1,47 @@
+{
+  "id": "RemoteCoop",
+  "name": "NE Remote Play Coop",
+  "version": "1.0.0",
+  "author": "nerderror",
+  "description": "Play missions together over Parsec (or Steam Remote Play Together) — one game, shared screen: the crew is split between 2–4 players, every bot shows its owner's name, and with the input lock each player's gamepad (or keyboard + mouse) controls only their own bots. The input lock patches the game exe (current Steam and GOG versions). For real network play use NE Co-op instead.",
+  "plugin": "SWH2.Mod.RemoteCoop.dll",
+  "order": 250,
+  "minLoaderVersion": "1.2.0",
+  "patchesExe": true,
+  "settings": [
+    { "id": "playersHeader", "type": "header", "label": "Players" },
+    { "id": "players", "type": "int", "label": "Number of players", "default": 2, "min": 2, "max": 4 },
+    { "id": "name1", "type": "string", "label": "Player 1 name", "default": "Player 1" },
+    { "id": "name2", "type": "string", "label": "Player 2 name", "default": "Player 2" },
+    { "id": "name3", "type": "string", "label": "Player 3 name", "default": "Player 3" },
+    { "id": "name4", "type": "string", "label": "Player 4 name", "default": "Player 4" },
+
+    { "id": "crewHeader", "type": "header", "label": "Who controls which bot" },
+    { "id": "crew1", "type": "string", "label": "Player 1 crew", "default": "",
+      "help": "Optional, comma-separated: captain, daisy, wesley, judy, crow, diver, poe, cornelius, adventure_boy, chimney, cyclop. Bots not listed for anyone are dealt out in turn to the players, starting with the player who has the fewest." },
+    { "id": "crew2", "type": "string", "label": "Player 2 crew", "default": "" },
+    { "id": "crew3", "type": "string", "label": "Player 3 crew", "default": "" },
+    { "id": "crew4", "type": "string", "label": "Player 4 crew", "default": "" },
+
+    { "id": "labelsHeader", "type": "header", "label": "Labels" },
+    { "id": "labelTurn", "type": "bool", "label": "Show owners at the start of every player turn", "default": true },
+    { "id": "labelSelect", "type": "bool", "label": "Show the owner when a bot is selected", "default": true,
+      "help": "Also when the game selects the next bot by itself after an action — so everyone sees whose move it is." },
+
+    { "id": "inputHeader", "type": "header", "label": "Input lock — each player controls only their own bots" },
+    { "id": "inputLock", "type": "bool", "label": "Only the owner's device controls the selected bot", "default": true,
+      "help": "Patches the game exe. Input from other devices is ignored while someone else's bot is selected, except switching bots (LB/RB, Q/E/Tab, 1-6), the camera (right stick, arrows), pause (Start, Esc) and the map. Gamepads are numbered in the order they were connected: on Parsec usually the host's own gamepad first (if any), then guests in the order they joined. Cutscenes, dialogue, menus (also the pause menu) and the world map are open to everyone." },
+    { "id": "device1", "type": "choice", "label": "Player 1 plays with", "default": "kbm", "enabledBy": "inputLock", "choices": [
+      { "value": "kbm", "label": "Keyboard + mouse" }, { "value": "pad1", "label": "Gamepad 1" }, { "value": "pad2", "label": "Gamepad 2" },
+      { "value": "pad3", "label": "Gamepad 3" }, { "value": "pad4", "label": "Gamepad 4" }, { "value": "all", "label": "Any device" } ] },
+    { "id": "device2", "type": "choice", "label": "Player 2 plays with", "default": "pad1", "enabledBy": "inputLock", "choices": [
+      { "value": "kbm", "label": "Keyboard + mouse" }, { "value": "pad1", "label": "Gamepad 1" }, { "value": "pad2", "label": "Gamepad 2" },
+      { "value": "pad3", "label": "Gamepad 3" }, { "value": "pad4", "label": "Gamepad 4" }, { "value": "all", "label": "Any device" } ] },
+    { "id": "device3", "type": "choice", "label": "Player 3 plays with", "default": "pad2", "enabledBy": "inputLock", "choices": [
+      { "value": "kbm", "label": "Keyboard + mouse" }, { "value": "pad1", "label": "Gamepad 1" }, { "value": "pad2", "label": "Gamepad 2" },
+      { "value": "pad3", "label": "Gamepad 3" }, { "value": "pad4", "label": "Gamepad 4" }, { "value": "all", "label": "Any device" } ] },
+    { "id": "device4", "type": "choice", "label": "Player 4 plays with", "default": "pad3", "enabledBy": "inputLock", "choices": [
+      { "value": "kbm", "label": "Keyboard + mouse" }, { "value": "pad1", "label": "Gamepad 1" }, { "value": "pad2", "label": "Gamepad 2" },
+      { "value": "pad3", "label": "Gamepad 3" }, { "value": "pad4", "label": "Gamepad 4" }, { "value": "all", "label": "Any device" } ] }
+  ]
+}

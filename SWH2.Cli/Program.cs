@@ -27,7 +27,7 @@ Usage:
   swh2 roundtrip                   developer check: XML load/save is lossless
   swh2 <command> ...               commands added by installed mods (listed below), e.g. swh2 cheat win
 
-Common option: --game DIR (default: the game folder the loader sits in, else auto-detected from Steam).
+Common option: --game DIR (default: the game folder the loader sits in, else auto-detected: Steam, then GOG).
 Mods live in <game>\Mods\<Id>\ (mod.json + plugin and/or files\ in pak layout).
 The profile (enabled mods + settings) is <game>\SWH2ModLoader\profile.json, shared with the GUI.
 """;
@@ -157,14 +157,14 @@ try
                 profile.Store(m, s);
             }
             var dry = opts.GetValueOrDefault("dry-run");
-            if (dry == null && GameRunning()) { Console.Error.WriteLine("Close the game first — its files are in use."); return 1; }
+            if (dry == null && game.IsRunning) { Console.Error.WriteLine("Close the game first — its files are in use."); return 1; }
             Pipeline.Install(game, profile, Log, dry);
             if (dry == null && !adHoc) profile.Save(game); // keeps generated seeds
             return 0;
         }
 
         case "restore":
-            if (GameRunning()) { Console.Error.WriteLine("Close the game first — its files are in use."); return 1; }
+            if (game.IsRunning) { Console.Error.WriteLine("Close the game first — its files are in use."); return 1; }
             Pipeline.Restore(game, Log);
             return 0;
 
@@ -184,7 +184,16 @@ try
             // Commands provided by mods (mod.json "command"), e.g. "swh2 cheat win" from CheatMenu.
             var mod = Mods().FirstOrDefault(m => string.Equals(m.Command, args[0], StringComparison.OrdinalIgnoreCase));
             if (mod?.Plugin != null && ModCatalog.LoadPlugin(mod) is IModCommand command)
-                return command.RunCommand(positional, new ModToolContext(mod, game, profile.SettingsFor(mod), Log));
+            {
+                // The mod gets its own options too (e.g. nettest --no-launch); only the common --game is taken out.
+                var own = new List<string>();
+                for (int i = 1; i < args.Length; i++)
+                {
+                    if (args[i].Equals("--game", StringComparison.OrdinalIgnoreCase)) { i++; continue; }
+                    own.Add(args[i]);
+                }
+                return command.RunCommand(own, new ModToolContext(mod, game, profile.SettingsFor(mod), Log));
+            }
             Console.Error.WriteLine($"Unknown command '{args[0]}'.\n\n{Usage}");
             return 2;
         }
@@ -208,7 +217,7 @@ static int Saves(GameInstall game, ModProfile profile, List<string> args, Dictio
         ? accounts.FirstOrDefault(a => a.AccountId == id) ?? throw new ArgumentException($"No saves for account {id}. Found: {string.Join(", ", accounts.Select(a => a.AccountId))}")
         : accounts.FirstOrDefault() ?? throw new ArgumentException($"No saves found in {SaveBanks.SavesRoot}.");
     int Slot(string s) => int.TryParse(s, out int n) && n >= 1 ? n - 1 : throw new ArgumentException($"'{s}': slot number expected (1, 2, 3…)");
-    void NeedClosed() { if (GameRunning()) throw new InvalidOperationException("Close the game first — it would write over the slot."); }
+    void NeedClosed() { if (GameInstall.AnyRunning) throw new InvalidOperationException("Close the game first — it would write over the slot."); }
     string sub = args.Count > 0 ? args[0] : "list";
     switch (sub)
     {
@@ -248,7 +257,6 @@ static int Saves(GameInstall game, ModProfile profile, List<string> args, Dictio
     }
 }
 
-static bool GameRunning() => System.Diagnostics.Process.GetProcessesByName("SteamWorld Heist 2").Length > 0;
 
 static (string Key, string Value) SplitKv(string kv)
 {

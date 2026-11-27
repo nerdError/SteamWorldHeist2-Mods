@@ -38,6 +38,7 @@ local realgetenv = os.getenv
 os.getenv = function(k) if k == "APPDATA" then return TMPDIR end return realgetenv(k) end
 ''')
 L.globals().TMPDIR = tmp
+L.globals().FRAME = 0
 for f in sorted(glob.glob(os.path.join(a.mod, "Lua", "Mod", "*.lua"))):
     L.execute(open(f, encoding="utf-8").read())
 L.execute(r'''
@@ -60,6 +61,9 @@ function make_env()
   local stubs = {
     GetFriendlyActors = function() return {101, 102} end,
     GetEnemyActors = function() return {201} end,
+    GetAllActors = function() return {101, 102, 201} end,
+    -- an action is in progress during frames 10..19 of every 40
+    IsActionsOngoing = function() return FRAME % 40 >= 10 and FRAME % 40 < 20 end,
     GetActorMaxHealth = function() return 10 end,
     GetActorHealth = function() return 5 end,
     HasModifier = function() return false end,
@@ -69,6 +73,10 @@ function make_env()
     GetAlertActors = function() return {201} end,
     IsActorHostile = function(e) return e >= 200 end,
     GetEntityPosition = function(e) return {x = e, y = 0} end,
+    GetEntityName = function(e) return ({[101] = "captain", [102] = "wesley"})[e] or ("entity_" .. e) end,
+    GetCurrentFaction = function() return "cowbots" end,
+    -- the player clicks through the crew: a different bot every 40 frames (see OnUpdate loop)
+    GetSelectedActor = function() return ({101, 102})[math.floor(FRAME / 40) % 2 + 1] end,
   }
   -- Vector(x, y) and the constants Vector.Left/Right/Up/Down
   env.Vector = setmetatable({Left = {x = -1, y = 0}, Right = {x = 1, y = 0}, Up = {x = 0, y = -1}, Down = {x = 0, y = 1}},
@@ -94,7 +102,9 @@ for cb, args in ([("OnMissionResume", ())] if a.resume else start):
     if fn: fn(*args)
 upd = env["OnUpdate"]
 if upd:
-    for _ in range(a.frames): upd(1 / 60)
+    for i in range(a.frames):
+        L.globals().FRAME = i
+        upd(1 / 60)
 calls = list(L.eval("CALLS").values())
 print(f"engine calls ({len(calls)}):", ", ".join(calls[:a.calls]) + (" …" if len(calls) > a.calls else ""))
 for p in sorted(glob.glob(os.path.join(data, "*"))):

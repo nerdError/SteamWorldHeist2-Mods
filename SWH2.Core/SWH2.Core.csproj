@@ -3,7 +3,7 @@
   <PropertyGroup>
     <RootNamespace>SWH2</RootNamespace>
     <!-- Version of the mod loader and of the mod API (mod.json "minLoaderVersion"). -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
@@ -13,6 +13,11 @@
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Steam -> other build exe address maps (tools/re/build_map.py), read by GameBuild. -->
+    <EmbeddedResource Include="Maps\*.map" LogicalName="SWH2.Maps.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

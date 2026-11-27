@@ -101,7 +101,7 @@ public sealed class MyMod : IModPlugin
 | `Settings` | `Bool/Int/Float/Double/String(id)`, `IsActive(id)` |
 | `Content` | the game files: `Xml(path)` (editable `XmlDoc`), `Read/ReadText/Write/WriteText`, `Find(dir, "pattern*.xml")`, `ExistsInOriginal`, `ReadOriginal` |
 | `Lua` | `AddGlobalModule(name, source)`, `AppendToMissionScripts(script => block)`, `AddStrings(...)` — stack across mods (see docs/MODDING.md for the sandbox rules: no `pcall` in mission scripts, always call the original callbacks) |
-| `Exe` | `Patch(rva, expectedOriginalBytes, newBytes)`, `AddSection(name, size)` + `Write(rva, bytes)`, `ExeImage.Jmp`, `ExeImage.Relocate`. Only the supported Steam build; throws otherwise |
+| `Exe` | `Patch(rva, expectedOriginalBytes, newBytes)`, `AddSection(name, size)` + `Write(rva, bytes)`, `ExeImage.Jmp`, `ExeImage.CallIndirect`, `ExeImage.Relocate`. Steam and GOG builds (`Exe.Build`): write addresses for the Steam build and pass each through `Exe.Map(rva)` (identity on Steam, address map on GOG; throws if there is no counterpart); code assembled against Steam addresses goes in with `Exe.RelocateMapped`. Expected bytes containing rel32 fields differ between builds: build them from mapped addresses (see Mods/Coop). Throws on an unknown build |
 | `Loc`, `Items` | English strings; item catalog (names, kinds, tiers, key items) |
 | `Report`, `ReportName` | text saved as a report after install |
 | `Summary` | short text shown in the install status |

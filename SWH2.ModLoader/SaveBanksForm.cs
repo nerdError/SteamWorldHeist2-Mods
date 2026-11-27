@@ -169,7 +169,7 @@ public sealed class SaveBanksForm : Form
     void LoadBank()
     {
         if (_banks == null || SelectedSlot is not { } slot || SelectedBank is not { } bank) return;
-        if (Process.GetProcessesByName("SteamWorld Heist 2").Length > 0)
+        if (GameInstall.AnyRunning)
         {
             MessageBox.Show(this, "Close the game first — it keeps the slots in memory and would write over the slot.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;

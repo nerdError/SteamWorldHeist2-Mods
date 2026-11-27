@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SWH2.Mod.Coop</AssemblyName>
+    <RootNamespace>SWH2.Mods.Coop</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Shared with Challenges: combat mission scripts + the generic script for procedural missions. -->
+    <Compile Include="..\Challenges\MissionScripts.cs" Link="MissionScripts.cs" />
+    <EmbeddedResource Include="Lua\*.lua" LogicalName="%(Filename)%(Extension)" />
+    <None Include="native\**" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <!-- Input lock + netplay test: native dll the game loads itself (exe patch), built with the Visual Studio C++ tools. -->
+  <Target Name="BuildInputLock" AfterTargets="Build" Inputs="native\swh2coop.c;native\netplay.c;native\nettcp.c;native\netplay.h;native\exemap.c;native\map_gog.h;native\build.cmd" Outputs="$(OutDir)swh2coop.dll">
+    <Exec Command="&quot;$(MSBuildProjectDirectory)\native\build.cmd&quot; &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;" />
+  </Target>
+
+</Project>

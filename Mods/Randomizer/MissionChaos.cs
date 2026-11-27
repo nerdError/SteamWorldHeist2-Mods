@@ -398,11 +398,18 @@ public static class MissionChaos
 SWH2Rnd = {}
 local R = SWH2Rnd
 
-local LOG = ((os and os.getenv and os.getenv(""APPDATA"")) or """") .. ""\\Thunderful\\SteamWorld Heist II\\swh2_randomizer.log""
+-- File in the data folder of this copy of the game: SWH2_INSTANCE_DIR (""instanceN\"") is set by the Coop dll for the
+-- 2nd+ copy running on one PC. Read on every use, in case it is set after this file is loaded.
+local function file(name)
+	local getenv = os and os.getenv
+	return ((getenv and getenv(""APPDATA"")) or """") .. ""\\Thunderful\\SteamWorld Heist II\\"" ..
+		((getenv and getenv(""SWH2_INSTANCE_DIR"")) or """") .. name
+end
+local LOG = ""swh2_randomizer.log""
 math.randomseed(os.time() + math.floor((os.clock() * 1000) % 100000))
 
 function R.log(msg)
-	local f = io.open(LOG, ""a"")
+	local f = io.open(file(LOG), ""a"")
 	if f then f:write(os.date(""%Y-%m-%d %H:%M:%S""), ""  "", tostring(msg), ""\n""); f:close() end
 end
 

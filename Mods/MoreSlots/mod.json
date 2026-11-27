@@ -1,12 +1,12 @@
 {
   "id": "MoreSlots",
   "name": "NE More Save Slots",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "author": "nerderror",
-  "description": "More save slots in the main menu (the game has 3). Patches the game exe (supported Steam build only). Saves in the extra slots stay on disk when the mod is turned off, but the game won't show them until it's back on.",
+  "description": "More save slots in the main menu (the game has 3). Patches the game exe (current Steam and GOG versions). Saves in the extra slots stay on disk when the mod is turned off, but the game won't show them until it's back on.",
   "plugin": "SWH2.Mod.MoreSlots.dll",
   "order": 310,
-  "minLoaderVersion": "1.0.0",
+  "minLoaderVersion": "1.2.0",
   "patchesExe": true,
   "settings": [
     { "id": "slots", "type": "int", "label": "Save slots", "default": 6, "min": 4, "max": 10, "help": "More than 6 makes the slot buttons in the main menu shorter so they fit on the screen." }

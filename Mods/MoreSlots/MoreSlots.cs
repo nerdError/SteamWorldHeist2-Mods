@@ -21,18 +21,19 @@ public sealed class MoreSlotsMod : IModPlugin
         if (n is < 1 or > 100) throw new InvalidOperationException($"Save slots must be 1..100, got {n}.");
         var exe = ctx.Exe;
         byte[] Imm32(int v) => BitConverter.GetBytes(v);
+        // Addresses are of the Steam build; exe.Map translates them for the GOG one.
 
         // Allocation of the profile vector (0x563760): new(3*0x108), end = begin+3*0x108, construct 3 elements.
-        exe.Patch(0x56379D, [0xB9, .. Imm32(Original * ProfileSize)], [0xB9, .. Imm32(n * ProfileSize)]);             // mov ecx, size
-        exe.Patch(0x5637B5, [0x48, 0x05, .. Imm32(Original * ProfileSize)], [0x48, 0x05, .. Imm32(n * ProfileSize)]); // add rax, size
-        exe.Patch(0x5637C9, [0xBA, .. Imm32(Original)], [0xBA, .. Imm32(n)]);                                          // mov edx, count
+        exe.Patch(exe.Map(0x56379D), [0xB9, .. Imm32(Original * ProfileSize)], [0xB9, .. Imm32(n * ProfileSize)]);             // mov ecx, size
+        exe.Patch(exe.Map(0x5637B5), [0x48, 0x05, .. Imm32(Original * ProfileSize)], [0x48, 0x05, .. Imm32(n * ProfileSize)]); // add rax, size
+        exe.Patch(exe.Map(0x5637C9), [0xBA, .. Imm32(Original)], [0xBA, .. Imm32(n)]);                                          // mov edx, count
         // Loops over the slots: reading the save files at startup, "is there any save" (main menu), menu buttons.
-        exe.Patch(0x561D20, [0x41, 0x83, 0xFE, Original], [0x41, 0x83, 0xFE, (byte)n]); // cmp r14d, count
-        exe.Patch(0x5ED3CC, [0x48, 0x83, 0xF9, Original], [0x48, 0x83, 0xF9, (byte)n]); // cmp rcx, count
-        exe.Patch(0x5F0D4E, [0x83, 0xFB, Original], [0x83, 0xFB, (byte)n]);             // cmp ebx, count
+        exe.Patch(exe.Map(0x561D20), [0x41, 0x83, 0xFE, Original], [0x41, 0x83, 0xFE, (byte)n]); // cmp r14d, count
+        exe.Patch(exe.Map(0x5ED3CC), [0x48, 0x83, 0xF9, Original], [0x48, 0x83, 0xF9, (byte)n]); // cmp rcx, count
+        exe.Patch(exe.Map(0x5F0D4E), [0x83, 0xFB, Original], [0x83, 0xFB, (byte)n]);             // cmp ebx, count
         // The current slot getter (0x561e10) clamps Session.CurrentProfile to 0..2: without this, slots 4+ start
         // fine but every save goes to slot 3.
-        exe.Patch(0x561F23, [0xB8, .. Imm32(Original - 1)], [0xB8, .. Imm32(n - 1)]);  // mov eax, count-1
+        exe.Patch(exe.Map(0x561F23), [0xB8, .. Imm32(Original - 1)], [0xB8, .. Imm32(n - 1)]);  // mov eax, count-1
 
         if (n > 6) CompactButtons(ctx);
         ctx.Summary = $"{n} save slots";

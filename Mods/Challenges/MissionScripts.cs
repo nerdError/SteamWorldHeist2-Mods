@@ -66,7 +66,9 @@ public sealed class MissionScripts
 
     void AddGeneric(ModContext ctx)
     {
-        if (ctx.Content.Exists(GenericPath)) throw new InvalidOperationException($"{GenericPath} already exists (built from a modded file?)");
+        if (ctx.Content.ExistsInOriginal(GenericPath)) throw new InvalidOperationException($"{GenericPath} already exists (built from a modded file?)");
+        // Added by an earlier mod sharing this class (Challenges before Coop): its missions already point at it.
+        if (ctx.Content.Exists(GenericPath)) return;
         foreach (var (name, m) in _missions)
         {
             if (m.IsAbstract() || Resolve(name, "StartingMode") != "Combat" || Resolve(name, "Script") != null) continue;

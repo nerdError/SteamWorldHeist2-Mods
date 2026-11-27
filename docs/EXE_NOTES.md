@@ -114,6 +114,19 @@
   катсцена (флаги `0x12`) / Conversation / IntermissionCutscene / PlayMovie / Victory / Defeat → ×1;
   EnemyIntro / TurretIntro / Reinforcements → `×intro`; иначе ход не-`"cowbots"` → `×enemy`; иначе ×1.
 
+## Быстрый старт (мод QuickStart)
+- Ролик-логотип: `LogosSystemState` (vtable `0xb948a0`), Update `0x279840` (слот 4) играет ролики из таблицы на 1
+  элемент (`0xb77420` → `Movies/logo_thunderful`, сам файл — loose `Bundle/Core/Movies/*.webm`); когда индекс
+  `[this+0x18]` дошёл до числа — `0x2799c3`: `new MainMenuState` (0x1d8 байт, конструктор `0x5ecab0`, 4-й аргумент
+  r9b → `[this+0xa1]`, отсюда 0) и смена состояния. Патч: `cmp rax, 1` (`0x279894`) → `cmp rax, 0`. **Работает.**
+- Автозагрузка (НЕ сделана): `MainMenuState` (vtable `0xbb5588`), метод 8 = `0x5eddd0`; в конце:
+  `if ([this+0xa0] || (byte [0xea52a7] && ![this+0xa1])) [this+0xa0] = LoadingGame(this)` (`0x5eebe0`, лог
+  «Loading game»: профиль `Session.CurrentProfile` (settings.xml) = последний слот, проверка состояния профиля
+  `[0xea5178 + idx*0x108] == 1`, ставит задачу через глобальный объект `[0xea1ba8]`->vt[1] и `[this+0xa2] = 1`).
+  Флаг `0xea52a7` в релизе никто не пишет (единственный читатель — эта проверка). Проверено в игре: метод 8
+  вызывается ОДИН раз при входе в меню; вызов загрузки там → вечный чёрный экран; счётчик «на N-м вызове» не
+  срабатывает. Нужна точка, которая вызывается каждый кадр главного меню (его Update), или вызов загрузки позже.
+
 ## Точки отката «Load Checkpoint» (патч `no_checkpoints`)
 - `GameConstants.SaveRestorePoints` (`game_constants.xml`, по умолчанию 2) парсится в `0x5b3808` → поле `+0x84`
   глобальных констант (`[0xea19d0]`). Сохранение точки (`0xc6c50`) перед добавлением делает
@@ -144,3 +157,15 @@
   код очищает панель (`0x74d400`) и создаёт по шаблону `main_menu_profile_slot` кнопку на каждый слот
   (кнопка 140 + отступ 50, экран 2160 строк).
 - Реализовано в `Mods/MoreSlots` (7 патчей; при 7+ слотах кнопки 100 + 20).
+
+## Мультиплеер: внутренности тактики (2026-11-27)
+Подробно и с планом — [MULTIPLAYER.md](MULTIPLAYER.md). Кратко:
+- `ActorSimulator` (`actorsimulator.cpp`): `RequestAction(sim, actor, actionIndex, Target*, flag)` `0x38b9b0` (20 мест
+  вызова: игрок, ИИ, Lua; `Target` = `std::variant` из 6 простых типов — MULTIPLAYER.md, «Команда»), выполнение
+  `0x391e30` (событие ActionStarted + «Pre-simulating outcome»), обновление очереди `0x3896d0` из `0x480a10`.
+- `PlayerTurnSimulator` (`playerturnsimulator.cpp`, `0x455eb0`…): выбор бота/действия, подтверждение по типу цели `0x458780`.
+- ИИ: исполнитель приказов `0x43be40`. `OutcomeSimulator` (`outcomesimulator.cpp`): `0x455060` крутит `0x480a10`
+  с фиксированным шагом `System.UpdatesPerSecond` (1/60) на копии состояния.
+- ГСЧ — MWC Марсальи, один на игру: `[0xea1b98]` → `{z, w}`, засев от времени при запуске (`0x7e11a0`).
+- Колбэки Lua: таблица имён `0xb785d8`, подписка на события мира — `0x470ec0`.
+- Ввод: геймпады опрашиваются все в одном цикле `0x7f4d18`, события SDL — `0x7f9520` (мод Coop, `native/swh2coop.c`).

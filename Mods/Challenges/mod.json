@@ -1,12 +1,12 @@
 {
   "id": "Challenges",
   "name": "NE Challenge Manager",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "author": "nerderror",
-  "description": "Optional rules for harder runs, each with its own switch: no grind, whole-game mutators (1 HP, explosive shots, death blasts), permadeath and one-life runs. Works on its own or together with the Randomizer. 'No checkpoints' patches the game exe (supported Steam build only).",
+  "description": "Optional rules for harder runs, each with its own switch: no grind, whole-game mutators (1 HP, explosive shots, death blasts), permadeath and one-life runs. Works on its own or together with the Randomizer. 'No checkpoints' patches the game exe (current Steam and GOG versions).",
   "plugin": "SWH2.Mod.Challenges.dll",
   "order": 200,
-  "minLoaderVersion": "1.1.0",
+  "minLoaderVersion": "1.2.0",
   "patchesExe": true,
   "settings": [
     { "id": "noGrindHeader", "type": "header", "label": "No grind — farmable rewards become one-time" },

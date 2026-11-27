@@ -13,6 +13,9 @@
 
   -Deploy also copies SWH2ModLoader\ and Mods\ into the game folder (only adds/updates the loader and the mods;
   Backup\, profile.json and Reports\ are kept, game files are not touched until you click Apply in the loader).
+  -Game takes several folders separated by ';' (e.g. a Steam and a GOG install). A folder whose game is running is
+  skipped. A folder whose loader is open is skipped too, unless -RestartLoader: then that loader is closed (it saves
+  its settings), updated and started again with --apply, so the new mod versions go straight into the game.
 
   Unchanged parts are not rebuilt: the loader and each mod are cached in obj\package\<name>\ together with a hash of
   their sources (project folder, SWH2.Core, Directory.Build.props files). Same hash = reuse, dotnet is not run.
@@ -22,10 +25,12 @@
   powershell -ExecutionPolicy Bypass -File tools\package.ps1
   powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Deploy
   powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Deploy -Game "D:\Games\SteamWorld Heist 2"
+  powershell -ExecutionPolicy Bypass -File tools\package.ps1 -Deploy -RestartLoader -Game "C:\Steam\...\SteamWorld Heist 2;C:\GOG Games\SteamWorld Heist 2"
 #>
 param(
     [switch]$Deploy,
     [switch]$Rebuild,
+    [switch]$RestartLoader,
     [string]$Game = 'C:\Program Files (x86)\Steam\steamapps\common\SteamWorld Heist 2'
 )
 $ErrorActionPreference = 'Stop'
@@ -33,7 +38,12 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
 $cache = Join-Path $root 'obj\package'
-$mods = 'Randomizer', 'Turbo', 'Challenges', 'CheatMenu', 'MoreSlots'
+$mods = 'Randomizer', 'Turbo', 'Challenges', 'CheatMenu', 'MoreSlots', 'Coop', 'RemoteCoop', 'QuickStart'
+# Inputs of a mod outside its own folder (they go into its source hash).
+$modSources = @{
+    'Coop' = @('Mods\Challenges\MissionScripts.cs')
+    'RemoteCoop' = @('Mods\Challenges\MissionScripts.cs', 'Mods\Coop\CoopShared.cs', 'Mods\Coop\Lua', 'Mods\Coop\native')
+}
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 New-Item -ItemType Directory -Force (Join-Path $dist 'nexus') | Out-Null
 
@@ -114,7 +124,8 @@ $modArchives = @()
 $modStages = @{}
 foreach ($mod in $mods) {
     # Staged like the game folder: Mods\<mod>\...
-    $modStage = Get-Cached $mod ($common + "Mods\$mod", 'Mods\Directory.Build.props') {
+    $extra = if ($modSources[$mod]) { $modSources[$mod] } else { @() }
+    $modStage = Get-Cached $mod ($common + "Mods\$mod", 'Mods\Directory.Build.props' + $extra) {
         param($o)
         Invoke-Dotnet @('build', (Join-Path $root "Mods\$mod\$mod.csproj"), '-c', 'Release')
         $modDir = Join-Path $o "Mods\$mod"
@@ -148,18 +159,59 @@ Write-Host "  nexus\$packName.zip  (main file of the loader page)"
 foreach ($a in $modArchives) { New-Zip (Join-Path $dist "nexus\$($a[0])") $a[1] }
 
 # ---- optional: copy into the game folder ---------------------------------------------------
-if ($Deploy) {
-    if (-not (Test-Path (Join-Path $Game 'SteamWorld Heist 2.exe'))) { throw "Game not found in '$Game' (use -Game <folder>)" }
-    Write-Host "Deploying to $Game..."
-    # Loader: overwrite program files, keep Backup\, profile.json, Reports\ etc.
-    Copy-Item (Join-Path $pack 'SWH2ModLoader') $Game -Recurse -Force
-    foreach ($mod in $mods) {
-        $target = Join-Path $Game "Mods\$mod"
-        if (Test-Path $target) { Remove-Item -Recurse -Force $target }   # mod settings live in profile.json, not here
-        New-Item -ItemType Directory -Force (Join-Path $Game 'Mods') | Out-Null
-        Copy-Item (Join-Path $pack "Mods\$mod") (Join-Path $Game 'Mods') -Recurse
+# Processes started from a file under $dir (Path is empty for processes we may not query: not ours).
+function Get-ProcessesIn([string]$name, [string]$dir) {
+    $prefix = (Resolve-Path $dir).Path.TrimEnd('\') + '\'
+    @(Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+}
+
+function Deploy-To([string]$dir) {
+    if (-not (Test-Path (Join-Path $dir 'SteamWorld Heist 2.exe'))) { Write-Warning "Game not found in '$dir', skipped (use -Game <folder>)"; return $false }
+    if ((Get-ProcessesIn 'SteamWorld Heist 2' $dir).Count -gt 0) {
+        Write-Warning "The game in '$dir' is running: NOT copied there. Close the game and build again."
+        return $false
     }
-    Write-Host "Deployed. Run $Game\SWH2ModLoader\SWH2ModLoader.exe, tick mods, click 'Apply to game'."
+    $loaderExe = Join-Path $dir 'SWH2ModLoader\SWH2ModLoader.exe'
+    $loaders = Get-ProcessesIn 'SWH2ModLoader' $dir
+    $restart = $false
+    if ($loaders.Count -gt 0) {
+        if (-not $RestartLoader) {
+            Write-Warning "The mod loader of '$dir' is open (its files are in use): NOT copied there. Close it and build again."
+            return $false
+        }
+        Write-Host "Closing the mod loader of $dir..."
+        foreach ($p in $loaders) { [void]$p.CloseMainWindow() }
+        foreach ($p in $loaders) { [void]$p.WaitForExit(15000) }
+        if ((Get-ProcessesIn 'SWH2ModLoader' $dir).Count -gt 0) {
+            Write-Warning "The mod loader of '$dir' didn't close (busy applying?): NOT copied there."
+            return $false
+        }
+        $restart = $true
+    }
+    Write-Host "Deploying to $dir..."
+    # Loader: overwrite program files, keep Backup\, profile.json, Reports\ etc.
+    Copy-Item (Join-Path $pack 'SWH2ModLoader') $dir -Recurse -Force
+    foreach ($mod in $mods) {
+        $target = Join-Path $dir "Mods\$mod"
+        if (Test-Path $target) { Remove-Item -Recurse -Force $target }   # mod settings live in profile.json, not here
+        New-Item -ItemType Directory -Force (Join-Path $dir 'Mods') | Out-Null
+        Copy-Item (Join-Path $pack "Mods\$mod") (Join-Path $dir 'Mods') -Recurse
+    }
+    if ($restart) {
+        Start-Process $loaderExe -ArgumentList '--apply' -WorkingDirectory (Split-Path $loaderExe)
+        Write-Host "Deployed; the mod loader was restarted and applies the enabled mods to the game."
+    } else {
+        Write-Host "Deployed. Run $loaderExe, tick mods, click 'Apply to game'."
+    }
+    return $true
+}
+
+if ($Deploy) {
+    $deployed = 0
+    foreach ($dir in $Game.Split(';') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) {
+        if (Deploy-To $dir) { $deployed++ }
+    }
+    if ($deployed -eq 0) { Write-Warning "Nothing was deployed." }
 }
 
 Write-Host ""

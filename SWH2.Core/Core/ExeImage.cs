@@ -7,13 +7,11 @@ namespace SWH2.Core;
 /// <summary>
 /// An in-memory copy of SteamWorld Heist 2.exe that mods patch. It always starts from the pristine original,
 /// every patch checks the original bytes, and two mods touching the same bytes is reported as a conflict.
-/// Addresses are RVAs of the one supported build (the game is final, so hard-coded addresses are fine).
+/// Mods write addresses as RVAs of the Steam build (the game is final, so hard-coded addresses are fine) and pass
+/// each one through <see cref="Map"/>, which translates it for the build being patched (<see cref="GameBuild"/>).
 /// </summary>
 public sealed class ExeImage
 {
-    /// <summary>SHA-256 of the Steam release exe (build 2024-10-04) that all patches are written for.</summary>
-    public const string SupportedSha256 = "F1C07F0343A5A4F7512C0A167BCF91C90555D12FFBEF0B6CF24EB54B25C5A611";
-
     public const uint SectionCode = 0x60000020; // code | execute | read
 
     readonly byte[] _original;
@@ -21,13 +19,28 @@ public sealed class ExeImage
     readonly List<(int Start, int End, string Owner)> _patched = [];
     readonly List<(uint Start, uint End, string Owner)> _added = [];
 
-    public ExeImage(byte[] original)
+    /// <param name="original">The pristine exe.</param>
+    /// <param name="build">Its build; null = identify it by hash (Steam if unknown).</param>
+    public ExeImage(byte[] original, GameBuild? build = null)
     {
         _original = original;
         _data = (byte[])original.Clone();
+        Build = build ?? Identify(original) ?? GameBuild.Steam;
     }
 
-    public static bool IsSupported(byte[] exe) => Hex.Sha256(exe) == SupportedSha256;
+    /// <summary>The known build an original exe is, or null (another version, or already patched).</summary>
+    public static GameBuild? Identify(byte[] exe) => GameBuild.FromSha256(Hex.Sha256(exe));
+    public static bool IsSupported(byte[] exe) => Identify(exe) != null;
+
+    /// <summary>The game release being patched.</summary>
+    public GameBuild Build { get; }
+
+    /// <summary>
+    /// The RVA in this exe of an address of the Steam build. Throws when this build has no known counterpart,
+    /// so a mod fails cleanly instead of patching the wrong place.
+    /// </summary>
+    public uint Map(uint steamRva) => Build.TryMap(steamRva)
+        ?? throw new NotSupportedException($"{CurrentOwner}: address {steamRva:X} (Steam build) has no known counterpart in the {Build.Name} exe.");
 
     /// <summary>Name shown in conflict messages; set by the loader before each mod runs.</summary>
     public string CurrentOwner { get; set; } = "?";
@@ -143,6 +156,31 @@ public sealed class ExeImage
             BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(off), checked((int)(target - (newRva + off + 4))));
         }
         return result;
+    }
+
+    /// <summary>
+    /// <see cref="Relocate(ReadOnlySpan{byte}, uint, uint, IEnumerable{int})"/> for code assembled against the Steam
+    /// build: the rel32 targets (game code / data) are translated with <see cref="Map"/>.
+    /// </summary>
+    public byte[] RelocateMapped(ReadOnlySpan<byte> code, uint assembledAt, uint newRva, IEnumerable<int> rel32Offsets)
+    {
+        var result = code.ToArray();
+        foreach (var off in rel32Offsets)
+        {
+            long target = assembledAt + off + 4 + BinaryPrimitives.ReadInt32LittleEndian(result.AsSpan(off));
+            BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(off), checked((int)(Map(checked((uint)target)) - (long)(newRva + off + 4))));
+        }
+        return result;
+    }
+
+    /// <summary>6-byte <c>call qword ptr [rip+rel32]</c> at <paramref name="at"/> through the pointer at <paramref name="slot"/>.</summary>
+    public static byte[] CallIndirect(uint at, uint slot)
+    {
+        var b = new byte[6];
+        b[0] = 0xFF;
+        b[1] = 0x15;
+        BinaryPrimitives.WriteInt32LittleEndian(b.AsSpan(2), checked((int)((long)slot - (at + 6))));
+        return b;
     }
 
     /// <summary>5-byte <c>jmp rel32</c> from <paramref name="at"/> to <paramref name="target"/>.</summary>

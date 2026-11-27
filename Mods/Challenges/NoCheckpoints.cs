@@ -16,7 +16,7 @@ public static class NoCheckpoints
 
     public static void Apply(ModContext ctx)
     {
-        ctx.Exe.Patch(HasRestorePoint, Original, ReturnFalse);
+        ctx.Exe.Patch(ctx.Exe.Map(HasRestorePoint), Original, ReturnFalse);
         ctx.Report.Section("No checkpoints");
         ctx.Report.Line("Load Checkpoint is disabled in missions.");
         ctx.Log("No checkpoints: HasRestorePoint() patched to false.");

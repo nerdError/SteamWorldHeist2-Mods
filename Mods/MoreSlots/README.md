@@ -1,6 +1,6 @@
 # NE More Save Slots — SteamWorld Heist 2
 
-Requires **NE Mod Loader & Manager** 1.0+ and the current Steam version of the game.
+Requires **NE Mod Loader & Manager** 1.2+ and the current Steam or GOG version of the game.
 
 The main menu shows more save slots: 4–10 instead of 3 (setting in the loader, default 6).
 With more than 6 the slot buttons get shorter so they fit on the screen.
@@ -23,7 +23,7 @@ Unpack into the game folder (`SteamWorld Heist 2\Mods\MoreSlots\mod.json`) or us
 
 # NE More Save Slots — по-русски
 
-Нужен **NE Mod Loader & Manager** 1.0+ и текущая Steam-версия игры.
+Нужен **NE Mod Loader & Manager** 1.2+ и текущая Steam- или GOG-версия игры.
 
 В главном меню больше слотов сохранения: 4–10 вместо 3 (настройка в загрузчике, по умолчанию 6).
 При количестве больше 6 кнопки слотов становятся ниже, чтобы поместиться на экране.
