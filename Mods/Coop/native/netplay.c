@@ -819,6 +819,7 @@ typedef void (*AnimInput_t)(void *unused, void *anim, void *view, unsigned char 
 #define RVA_ActionDefs 0xeb07a8    /* value index * 2 -> definition */
 #define RVA_MapFind 0xbad10
 #define RVA_TraceMake 0x376e30
+#define RVA_TraceSystem 0x27ec60   /* (world) -> the system the trace code wants first: what the modifier passes */
 #define RVA_TraceAim 0x377290
 #define RVA_PtrReset 0x18d8f0
 #define RVA_AnimInput 0x565890
@@ -827,7 +828,7 @@ typedef void (*AnimInput_t)(void *unused, void *anim, void *view, unsigned char 
 
 static AimUpdate_t realAimUpdate;
 static char *atActorStore, *atBodyStore, *atAnimStore, *atComponent, *atWeaponDef, *atMapFind, *atTraceMake, *atTraceAim,
-            *atPtrReset, *atAnimInput, *atActionMap, *atActionMapEnd, *atActionMapIdx, *atActionDefs;
+            *atPtrReset, *atAnimInput, *atActionMap, *atActionMapEnd, *atActionMapIdx, *atActionDefs, *atTraceSystem;
 typedef struct { const char *p; size_t n; } View;
 
 static void AimResolve(void)
@@ -837,7 +838,7 @@ static void AimResolve(void)
         { RVA_Component, &atComponent }, { RVA_WeaponDef, &atWeaponDef }, { RVA_MapFind, &atMapFind },
         { RVA_TraceMake, &atTraceMake }, { RVA_TraceAim, &atTraceAim }, { RVA_PtrReset, &atPtrReset },
         { RVA_AnimInput, &atAnimInput }, { RVA_ActionMap, &atActionMap }, { RVA_ActionMapEnd, &atActionMapEnd },
-        { RVA_ActionMapIdx, &atActionMapIdx }, { RVA_ActionDefs, &atActionDefs } };
+        { RVA_ActionMapIdx, &atActionMapIdx }, { RVA_ActionDefs, &atActionDefs }, { RVA_TraceSystem, &atTraceSystem } };
     for (int i = 0; i < (int)(sizeof list / sizeof list[0]); i++)
     {
         DWORD rva = ExeRva(list[i].rva);
@@ -911,6 +912,52 @@ static void AimUndraw(void *sim, RemoteAim *r)
     r->drawn = r->traced = 0;
 }
 
+/* Where a fault inside the game's code was (Steam RVA) and its address, for the log. */
+static DWORD faultRva, faultCode;
+static ULONG_PTR faultAddr;
+static int FaultWhere(EXCEPTION_POINTERS *e)
+{
+    faultCode = e->ExceptionRecord->ExceptionCode;
+    ULONG_PTR at = (ULONG_PTR)e->ExceptionRecord->ExceptionAddress;
+    faultRva = at >= (ULONG_PTR)base && at < (ULONG_PTR)base + 0x2000000 ? SteamRva((DWORD)(at - (ULONG_PTR)base)) : 0;
+    faultAddr = e->ExceptionRecord->NumberParameters >= 2 ? e->ExceptionRecord->ExceptionInformation[1] : 0;
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+/* The trace code's first argument: the aim UI passes 0x27ec60([ui + 0x18]) — a system out of a container the UI
+ * holds next to its world ([ui + 0x10]); that system's [+ 0x10] is the world again (0x3795d0 reads the entity manager
+ * from there). Not known from the actor simulator: candidates (the UI object when this game aimed itself, pointer
+ * fields of the simulator and the world) are tried and the first whose system leads back to the world is kept. */
+static void *traceSystem, *aimUi;
+static const char *traceFrom = "";
+static void *TraceSystem(void *sim)
+{
+    if (traceSystem || !atTraceSystem) return traceSystem;
+    char *world = *(char **)((char *)sim + 0x10);
+    static char what[64];
+    void *found = NULL;
+    for (int k = 0; k < 2 + 64 + 64 && !found; k++)
+    {
+        void *cand = NULL;
+        __try
+        {
+            if (k == 0) { cand = aimUi ? *(void **)((char *)aimUi + 0x18) : NULL; sprintf(what, "aim UI + 0x18"); }
+            else if (k == 1) continue;
+            else if (k < 66) { cand = *(void **)((char *)sim + (k - 2) * 8); sprintf(what, "simulator + %#x", (k - 2) * 8); }
+            else { cand = *(void **)(world + (k - 66) * 8); sprintf(what, "world + %#x", (k - 66) * 8); }
+            if (!cand || (ULONG_PTR)cand < 0x10000 || ((ULONG_PTR)cand & 7)) continue;
+            char *sys = (char *)((Store_t)atTraceSystem)(cand);
+            if (sys && (ULONG_PTR)sys >= 0x10000 && !((ULONG_PTR)sys & 7) && *(char **)(sys + 0x10) == world) found = sys;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { }
+    }
+    traceSystem = found;
+    traceFrom = found ? what : "";
+    NetLog(found ? "# the other player's sight line: trace system found (%s)" : "# the other player's sight line: no trace system found%s", traceFrom);
+    if (!found) aimTraceOff = 1;
+    return found;
+}
+
 /* Every frame of the main world. */
 static void AimDraw(void *sim)
 {
@@ -946,7 +993,13 @@ static void AimDraw(void *sim)
         stage = 0;
         __try
         {
-            void *body = ComponentOf(sim, atBodyStore, r->id), *action = ActionDef(actor, r->index);
+            /* First argument as the modifier ShowActorProjectileTrace gives it for a crewmate that isn't selected
+             * (0x3ba8e4: 0x27ec60(world)); the aim UI's own (a component of the selected one, 0x609784) faulted in the
+             * trace code (2026-11-28, nettest --menu-join). */
+            char *world = *(char **)((char *)sim + 0x10);
+            (void)world;
+            void *body = TraceSystem(sim), *action = ActionDef(actor, r->index);
+            if (!body) continue;
             stage = 1;
             void *weapon = ((WeaponDef_t)atWeaponDef)(NULL, ac + (*(size_t *)(ac + 0x298) ? 0x288 : 0x268));
             stage = 2;
@@ -959,11 +1012,12 @@ static void AimDraw(void *sim)
             }
             else if (!r->traced) NetLog("# the other player's sight line (%d): body %p action %p weapon %p", r->id, body, action, weapon);
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
+        __except (FaultWhere(GetExceptionInformation()))
         {
             static const char *what[] = { "body/action lookup", "weapon lookup", "making the trace", "pointing the trace" };
             aimTraceOff = 1;
-            NetLog("# ERROR: the other player's sight line (%d) faulted in %s: sight lines off, the raised weapon stays", r->id, what[stage]);
+            NetLog("# ERROR: the other player's sight line (%d) faulted in %s (code %08lx at %06lx, address %llx): sight lines off, the raised weapon stays",
+                   r->id, what[stage], faultCode, faultRva, (unsigned long long)faultAddr);
         }
     }
 }
@@ -988,6 +1042,7 @@ static void AimSend(const char *text)
 static void HookAimUpdate(void *ui, float *dt, void *state)
 {
     realAimUpdate(ui, dt, state);
+    aimUi = ui;
     if (!me || !mainSim) return;   /* the own aim is sent even when showing the other's failed */
     static int lastIndex, lastShow, lastValid;
     static float lastA;
@@ -1026,9 +1081,40 @@ static void HookAimUpdate(void *ui, float *dt, void *state)
     lastIndex = index; lastShow = show; lastValid = valid; lastA = a;
 }
 
+/* Tests (autopilot "aim <ordinal> <seconds>", host): aim lines for that crewmate as if its player aimed — the autopilot
+ * gives commands without the aim UI, so the guest's showing of it is otherwise never seen in a test run. */
+static int testAimOrd = -1;
+static ULONGLONG testAimUntil;
+void NetTestAim(int ordinal, int seconds)
+{
+    testAimOrd = ordinal;
+    testAimUntil = GetTickCount64() + (ULONGLONG)seconds * 1000;
+    NetLog("# test: aiming with ordinal %d for %d s", ordinal, seconds);
+}
+static void TestAim(void)
+{
+    if (testAimOrd < 0 || me != 1) return;
+    ULONGLONG now = GetTickCount64();
+    static ULONGLONG last;
+    char text[128];
+    if (now >= testAimUntil)
+    {
+        sprintf(text, "ao=%d off", testAimOrd);
+        AimSend(text);
+        testAimOrd = -1;
+        return;
+    }
+    if (now - last < AIM_SEND_MS) return;
+    last = now;
+    float a = 0.35f * sinf((float)(now % 6283) / 1000.0f);   /* sweeps up and down */
+    sprintf(text, "ao=%d i=4 a=%.5f b=%.5f s=1 v=1", testAimOrd, a, a);
+    AimSend(text);
+}
+
 /* Every frame: the aim mode is gone (shot, cancelled, another crewmate). */
 static void AimWatch(void)
 {
+    TestAim();
     if (aimSentOrd < 0 || GetTickCount64() - aimSeenAt < AIM_OFF_MS) return;
     char off[32];
     sprintf(off, "ao=%d off", aimSentOrd);

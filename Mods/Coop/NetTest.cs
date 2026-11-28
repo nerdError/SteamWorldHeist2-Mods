@@ -148,7 +148,7 @@ public static class NetTest
     /// the pause menu's Load checkpoint): its dll asks for a save, the guest's is to quit and join from it.</param>
     /// <param name="rejoinSec">The guest quits to the main menu this long into its battle (autopilot "quit"); its dll is to
     /// take the host's latest save of the battle, Continue by itself and replay on from there (compared from that save).</param>
-    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0, int afterSec = 0, bool next = false, bool mapQuit = false, int winSec = 0, int desyncSec = 0, int checkpointSec = 0, bool menuJoin = false)
+    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0, int afterSec = 0, bool next = false, bool mapQuit = false, int winSec = 0, int desyncSec = 0, int checkpointSec = 0, bool menuJoin = false, int aimSec = 0)
     {
         differs = true;
         if (GameInstall.AnyRunning) throw new InvalidOperationException("Close every copy of the game first.");
@@ -170,6 +170,8 @@ public static class NetTest
                                     : new[] { "over", "cutscenes off", "popups off", "wait 8000", "key down", "wait 800", "key return" };
         if (mapQuit) hostScript.AddRange(toMap);
         if (checkpointSec > 0) hostScript.AddRange(new[] { $"wait {checkpointSec * 1000}", "checkpoint" });
+        // --aim SEC: that long in, the host's 1st crewmate "aims" for 40 s (aim lines; the guest is to show it, --shots).
+        if (aimSec > 0) hostScript.AddRange(new[] { $"wait {aimSec * 1000}", "aim 1 40" });
         // --next (with --win): both go to the world map; the host's ship stands at the next mission's marker, Return enters it
         // (its game saves there, held until the guest comes); the guest's dll is to quit to the main menu and Continue into it.
         // --next: the host goes straight into its next battle (CheatMenu "mission", the game's ChangeMission) while the

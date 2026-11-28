@@ -61,6 +61,8 @@ static void *FakeStore(void *components) { (void)components; return fakeBody; }
 static void *FakeComponent(void *storage, int id) { (void)storage; (void)id; return fakeAnim; }
 static void *FakeWeaponDef(void *unused, void *name) { (void)unused; (void)name; return fakeWeapon; }
 static ULONG_PTR FakeMapFind(void *map, void *view) { (void)map; return ((View *)view)->n == 5 ? 0 : 99; }
+static char fakeContainer[0x40], fakeSys[0x40];
+static void *FakeTraceSystem(void *c) { return c == fakeContainer ? fakeSys : NULL; }
 static void *FakeTraceMake(void *body, void *actor, void *weapon, void *action, float a)
 { (void)body; (void)a; traceMakes += weapon == fakeWeapon && action == fakeAction; *(void **)((char *)actor + 0xf8) = fakeTrace; return fakeTrace; }
 static void FakeTraceAim(void *body, void *actor, void *trace, float a, unsigned char valid)
@@ -407,7 +409,9 @@ int main(void)
         *(void **)(storage + 0xd0) = nodeBuf[0];
         atActorStorage = (char *)FakeStorage;
         fakeStorage = storage;
-        void *sim3[4] = { NULL, NULL, aimWorld, NULL };
+        void *sim3[4] = { NULL, fakeContainer, aimWorld, NULL };   /* + 8: the container of the trace system (TraceSystem) */
+        *(void **)(fakeSys + 0x10) = aimWorld;
+        atTraceSystem = (char *)FakeTraceSystem;
         atIsActionsOngoing = (char *)FakeIdle;
         atActorStore = atBodyStore = atAnimStore = (char *)FakeStore;
         atComponent = (char *)FakeComponent;

@@ -1,9 +1,9 @@
 {
   "id": "Coop",
   "name": "NE Co-op (network)",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "author": "nerderror",
-  "description": "Play missions together over the network, 2 players, each in their own copy of the game (Steam or GOG). One player hosts, the other joins by IP address; the crew is split between you (1st crewmate host, 2nd guest, 3rd host…) and each player controls only their own. Start a network game with the Network game… button (nickname, host / join). Patches the game exe (current Steam and GOG versions). Experimental. For playing over Parsec on one game use NE Remote Play Coop instead.",
+  "description": "Play missions together over the network, 2 players, each in their own copy of the game (Steam or GOG). One player hosts, the other joins from the Steam friends list (Join game, no VPN needed) or by IP address; the crew is split between you (1st crewmate host, 2nd guest, 3rd host…) and each player controls only their own. Start a network game with the Network game… button (nickname, host / join). Patches the game exe (current Steam and GOG versions). Experimental. For playing over Parsec on one game use NE Remote Play Coop instead.",
   "plugin": "SWH2.Mod.Coop.dll",
   "order": 250,
   "minLoaderVersion": "1.2.0",

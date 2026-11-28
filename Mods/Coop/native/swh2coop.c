@@ -378,6 +378,7 @@ static void AutoStep(void)
             continue;
         }
         if (strcmp(cmd, "checkpoint") == 0) { NetLoadCheckpoint(); continue; }
+        if (strcmp(cmd, "aim") == 0) { int o = 1, sec = 20; sscanf(line, "%*s %d %d", &o, &sec); NetTestAim(o, sec); continue; }
         if (strcmp(cmd, "cutscenes") == 0) { autoCutscenes = strcmp(arg, "on") == 0; continue; }
         if (strcmp(cmd, "popups") == 0) { autoPopups = strcmp(arg, "on") == 0; autoPopupSeen = NetPopupTick(); continue; }
         if (strcmp(cmd, "pad") == 0)
