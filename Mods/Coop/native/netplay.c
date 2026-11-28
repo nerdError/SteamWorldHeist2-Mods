@@ -1868,6 +1868,7 @@ static void HostPlay(void *sim, const char *line)
     {
         SetName(guestName, line + 6);
         NetLog("name guest %s", guestName);
+        WriteCoopSlot();   /* the main menu marks the slot played together with this nick */
         return;
     }
     NetLog("# unknown line from the guest: %.80s", line);
@@ -3194,8 +3195,9 @@ static void CosmeticRng(void)
  * first), its label "name" (child 0x7536b0, __RTDynamicCast 0xa08489 Widget 0xe6cd90 -> Label 0xe6cdb8) gets the
  * header "<captain> - <place>" through Label::SetText 0x747ff0(label, string_view *) (current text: std::string at
  * [label + 0x570] + 0x28); slot state [slot] 0 = empty. The guest's dll notes the slot the host's save went into and
- * the host's nick (swh2_coop_slot.txt "<slot index> <nick>"), and the hook puts "Co-op with <nick> - " before the header (ASCII: the menu font) —
- * in every start of the game, so the player sees which slot is the co-op one. */
+ * the host's nick, the host the slot it shares and the guest's nick (swh2_coop_slot.txt "<slot index> <nick>"), and the
+ * hook makes the header "Co-op: <nick>" (ASCII: the menu font) in every start of the game. Seen on the Steam copy
+ * 2026-11-28 (slot list after Start). What the slot did goes to swh2_coop_slot.txt.log. */
 #define RVA_SlotFill 0x5f1610
 #define RVA_LabelSetText 0x747ff0
 #define RVA_DynCast 0xa08489
@@ -3207,14 +3209,32 @@ typedef void (*LabelSetText_t)(void *label, View *text);
 static SlotFill_t realSlotFill;
 static wchar_t coopSlotPath[MAX_PATH];
 
-/* Guest: the host's save is in this slot now (or the host's nick just came). */
+/* The co-op slot of this game and the other player's nick: the guest's = where the host's save went; the host's = the
+ * slot whose save it shares (session "save" line), marked once a guest said hello. */
+static int hostSlotIndex = -1;
 static void WriteCoopSlot(void)
 {
-    int slot = GuestSlotIndex();
-    if (me != 2 || slot < 0 || !coopSlotPath[0]) return;
+    int slot = me == 2 ? GuestSlotIndex() : me == 1 ? hostSlotIndex : -1;
+    const char *nick = me == 2 ? hostName : guestName;
+    if (slot < 0 || !coopSlotPath[0]) return;
     FILE *f = _wfopen(coopSlotPath, L"wb");
     if (!f) return;
-    fprintf(f, "%d %s\n", slot, hostName[0] ? hostName : "?");
+    fprintf(f, "%d %s\n", slot, nick[0] ? nick : "?");
+    fclose(f);
+}
+
+/* What the slot mark did, once per slot and start of the game (it is in the main menu, where no net log runs). */
+static void SlotLog(const char *fmt, ...)
+{
+    wchar_t path[MAX_PATH];
+    _snwprintf(path, MAX_PATH, L"%s.log", coopSlotPath);
+    FILE *f = _wfopen(path, L"a");
+    if (!f) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fputc('\n', f);
     fclose(f);
 }
 
@@ -3226,36 +3246,33 @@ static void HookSlotFill(void *menu, void *slot, int index)
     FILE *f = _wfopen(coopSlotPath, L"rb");
     if (f) { if (!fgets(line, sizeof line, f)) line[0] = 0; fclose(f); }
     if (sscanf(line, "%d %95[^\r\n]", &at, nick) != 2 || at != index) return;
+    static int logged[16];
+    int log = index >= 0 && index < 16 && !logged[index]++;
     DWORD find = ExeRva(RVA_FindChild), cast = ExeRva(RVA_DynCast), set = ExeRva(RVA_LabelSetText),
           rw = ExeRva(RVA_RttiWidget), rl = ExeRva(RVA_RttiLabel);
-    if (!find || !cast || !set || !rw || !rl) return;
+    if (!find || !cast || !set || !rw || !rl) { if (log) SlotLog("slot %d: an address is not mapped", index); return; }
     __try
     {
-        if (*(int *)slot == 0) return;   /* empty (deleted since) */
+        if (*(int *)slot == 0) { if (log) SlotLog("slot %d: empty", index); return; }
         char *list = *(char **)((char *)menu + 0x40);
         char *first = *(char **)(list + 0x3c8), *last = *(char **)(list + 0x3d0);
-        if (index < 0 || index >= (last - first) / 16) return;
+        if (index < 0 || index >= (last - first) / 16) { if (log) SlotLog("slot %d: no button (%lld)", index, (long long)((last - first) / 16)); return; }
         void *button = *(void **)(first + index * 16);
         __declspec(align(16)) View v = { "name", 4 };
         void *child = button ? ((FindChild_t)(base + find))(button, &v) : NULL;
         char *label = child ? (char *)((DynCast_t)(base + cast))(child, 0, base + rw, base + rl, 0) : NULL;
-        if (!label) return;
-        const char *old = "";
-        char *text = *(char **)(label + 0x570);
-        if (text)
-        {
-            text += 0x28;
-            old = *(size_t *)(text + 0x18) >= 16 ? *(const char **)text : text;
-        }
-        static char out[512];
-        _snprintf(out, sizeof out - 1, "Co-op with %s - %.380s", nick, old);
+        if (!label) { if (log) SlotLog("slot %d: no name label (button %p, child %p)", index, button, child); return; }
+        /* "Co-op: <nick>" in place of "Game N" (the button is narrow: a longer text is cut; the slot's place in the
+         * list still says which one). */
+        static char out[64];
+        _snprintf(out, sizeof out - 1, "Co-op: %.16s", nick);
         out[sizeof out - 1] = 0;
-        if (strncmp(old, "Co-op with ", 11) == 0) return;   /* already marked */
         v.p = out;
         v.n = strlen(out);
         ((LabelSetText_t)(base + set))(label, &v);
+        if (log) SlotLog("slot %d: marked \"%.200s\"", index, out);
     }
-    __except (EXCEPTION_EXECUTE_HANDLER) { NetLog("# ERROR: main menu: the co-op slot could not be marked"); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { SlotLog("slot %d: exception", index); }
 }
 
 static void *InlineHook(DWORD steamRva, const unsigned char *expected, int n, void *hook)
@@ -3310,7 +3327,10 @@ static void SetFrom(const char *text)
 static void SetSharedSave(const char *utf8)
 {
     wchar_t path[MAX_PATH];
-    if (MultiByteToWideChar(CP_UTF8, 0, utf8, -1, path, MAX_PATH)) NetTcpSetSave(path);
+    if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, path, MAX_PATH)) return;
+    NetTcpSetSave(path);
+    const wchar_t *p = wcsstr(path, L"savegame_");
+    if (!p || swscanf(p + 9, L"%d", &hostSlotIndex) != 1) hostSlotIndex = -1;
 }
 
 /* A network game started from the loader (NE Co-op → Network game…, NetSession.cs): swh2_net_session.txt
@@ -3438,6 +3458,7 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     _snwprintf(coopSlotPath, MAX_PATH, L"%s\\swh2_coop_slot.txt", dir);
     static const unsigned char slotFill[] = { 0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0xac,0x24,0xe0,0xfc,0xff,0xff };
     realSlotFill = (SlotFill_t)InlineHook(RVA_SlotFill, slotFill, sizeof slotFill, (void *)HookSlotFill);
+    if (!realSlotFill) SlotLog("the slot hook did not go in (other bytes at 0x%x)", ExeRva(RVA_SlotFill));
     if (!Enabled()) return;
 
     wchar_t cfg[MAX_PATH];

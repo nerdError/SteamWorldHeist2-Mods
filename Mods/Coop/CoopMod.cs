@@ -37,6 +37,7 @@ public sealed partial class CoopMod : IModPlugin
         AddStrings(ctx);
         AddCounters(ctx);
         AddPartySlotOwner(ctx);
+        FitSlotName(ctx);
         AddPopups(ctx);
         AddNameTags(ctx);
 
@@ -258,6 +259,22 @@ public sealed partial class CoopMod : IModPlugin
             $"<Style Name=\"CoopOwnerFrame{i}\">\r\n\t\t\t<Background>\r\n\t\t\t\t<Texture>Textures/UI/Combat/party_slot_selected.png</Texture>\r\n" +
             $"\t\t\t\t<TextureColor>{OwnerColors[i - 1]}</TextureColor>\r\n\t\t\t</Background>\r\n\t\t</Style>\r\n\t\t"));
         xml = xml.Insert(close, labels).Insert(open, frames).Insert(styles, style);   // back to front: offsets stay valid
+        ctx.Content.WriteText(file, xml, bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
+    }
+
+    /// <summary>
+    /// The main menu slot name (ui.me template main_menu_profile_slot, label "name"), where the Coop dll writes
+    /// "Co-op: &lt;nick&gt;": a fixed width with MinScale, so a long name gets smaller instead of cut ("Game 1" stays as it is).
+    /// </summary>
+    static void FitSlotName(ModContext ctx)
+    {
+        const string file = "UI/ui.me";
+        const string label = "Name=\"name\" Style=\"MainMenuButtonLabel\"";
+        var xml = ctx.Content.ReadText(file);
+        int template = xml.IndexOf("Name=\"main_menu_profile_slot\"", StringComparison.Ordinal);
+        int at = template < 0 ? -1 : xml.IndexOf(label, template, StringComparison.Ordinal);
+        if (at < 0 || at - template > 1000) throw new InvalidOperationException($"{file}: unexpected profile slot layout.");
+        xml = xml.Insert(at + label.Length, " Width=\"640\" MinScale=\"0.6\"");
         ctx.Content.WriteText(file, xml, bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
     }
 }
