@@ -88,6 +88,9 @@ function C.Enter(script)
 		if path and path ~= "" then C.netLog = path end
 	end
 	C.netWrite("# mission script " .. tostring(script))
+	-- For the dll: this scene is a combat mission (the bar, the submarine and the shops have no mission hook).
+	f = io.open(file("swh2_net_combat.txt"), "w")
+	if f then f:write(tostring(script), "\n"); f:close() end
 end
 
 -- Netplay test: lines in the dll's log (record or replay), compared by the Coop "Netplay test…" window / swh2 nettest compare (NetTest.cs).
@@ -245,13 +248,18 @@ end
 -- Netplay HUD: two counters (counters.xml coop_net_*, added by the mod): the network status and whose move it is.
 -- The dll writes swh2_net_status.txt twice a second: "<host|guest> <waiting|connected|closed|failed> <host's crewmates
 -- with action points> <guest's>". E = { AddManualCounter, RemoveCounter, player = is it the player's turn }.
-local STATUS, shown = "swh2_net_status.txt", {}
+local STATUS, shown, wanted = "swh2_net_status.txt", {}, {}
 -- Manual counters are saved with the mission: a guest that loaded the host's in-battle save got the host's status line
 -- too. The first update in a battle removes every netplay counter (removing a missing one does nothing).
 local NET_COUNTERS = { "host_waiting", "host_connected", "host_closed", "host_failed", "host_joining", "guest_waiting",
 	"guest_connected", "guest_closed", "guest_failed", "turn_both", "turn_p1", "turn_p2", "turn_enemy" }
+-- A counter changes only when two reads in a row (half a second apart) want the same one: the HUD flashed as it was
+-- taken down and put up at every passing value — action points arriving over the network a moment apart, the turn
+-- change (2026-11-28, laptop test 9: "the interface blinks between the turns").
 local function showCounter(slot, name, E)
-	if shown[slot] == name then return end
+	if shown[slot] == name then wanted[slot] = nil; return end
+	if wanted[slot] ~= name then wanted[slot] = name; return end
+	wanted[slot] = nil
 	if shown[slot] then E.RemoveCounter(shown[slot]) end
 	shown[slot] = name
 	if name then E.AddManualCounter(name, 0) end
@@ -296,6 +304,8 @@ function C.netStatus(E)
 	if not C.netCleared then
 		C.netCleared = true
 		for _, n in ipairs(NET_COUNTERS) do E.RemoveCounter("coop_net_" .. n) end
+		for k in pairs(shown) do shown[k] = nil end   -- a new battle: nothing of ours is up
+		for k in pairs(wanted) do wanted[k] = nil end
 	end
 	if C.netRole ~= role then
 		C.netRole = role
@@ -375,11 +385,11 @@ function C.netTags(list, frameNo, E)
 	end
 end
 
-local CUTSCENE, cutscene = "swh2_net_cutscene.txt", nil
+local CUTSCENE, cutscene, cutsceneWhy = "swh2_net_cutscene.txt", nil, nil
 
 function C.netCutscene(on, why)
-	if on == cutscene then return end
-	cutscene = on
+	if on == cutscene and (not on or why == cutsceneWhy) then return end
+	cutscene, cutsceneWhy = on, why
 	C.netWrite("# cutscene " .. (on and "on" or "off") .. (why and (" (" .. why .. ")") or ""))
 	local f = io.open(file(CUTSCENE), "w")
 	if f then f:write(on and ("1 " .. (why or "")) or "0", "\n"); f:close() end

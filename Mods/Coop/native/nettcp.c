@@ -239,7 +239,7 @@ static void WatchSave(void)
     saveTime = fa.ftLastWriteTime;
     /* At the first look the save is older than this game's log: a guest takes the log from its start. */
     saveAtLog = first ? 0 : FileSize(hostJob.path);
-    unsigned long long tick = NetWorldTick();
+    unsigned long long tick = NetBattleTick();   /* a combat mission: not the bar or the submarine */
     saveInBattle = !first && tick && GetTickCount64() - tick < 3000;
 }
 

@@ -275,6 +275,15 @@ public sealed partial class CoopMod : IModPlugin
     static readonly string[] OwnerColors = ["255, 150, 40, 150", "60, 170, 255, 150"];
 
     /// <summary>
+    /// The frame texture per player. The tint multiplies: the orange "selected" frame tinted blue came out green
+    /// (2026-11-28, laptop test 9) — the guest's is the game's cyan hover frame, tinted blue.
+    /// </summary>
+    static readonly string[] OwnerFrames = ["party_slot_selected", "party_slot_hover"];
+
+    /// <summary>Owner name colours over the portraits (full alpha: the text must read on the battlefield).</summary>
+    static readonly string[] OwnerTextColors = ["255, 165, 30, 255", "90, 185, 255, 255"];
+
+    /// <summary>
     /// The crew portrait slot (ui.me template tactics_partyslot_template) gets per player a tinted slot background behind
     /// the portrait (coop_owner_frame_N) and the player's name on top (coop_owner_label_N), all hidden; the Coop dll shows
     /// the owner's after the game fills a slot (netplay.c, "party slots"). Text inserts keep the rest of ui.me as it is.
@@ -292,11 +301,16 @@ public sealed partial class CoopMod : IModPlugin
         string indent = "\r\n\t\t\t\t";
         var frames = string.Concat(Enumerable.Range(1, 2).Select(i =>
             $"{indent}<Panel Name=\"coop_owner_frame_{i}\" Width=\"100%\" Height=\"100%\" Anchor=\"Center\" Style=\"CoopOwnerFrame{i}\" Hidden=\"True\" />"));
+        // The name above the slot (it covered the portrait), in a font with letters: the health bar's has digits only — the
+        // host's "nerdError" showed nothing, the guest's nick only its "228" (2026-11-28, laptop test 9).
+        // Margins: left top right bottom.
         var labels = string.Concat(Enumerable.Range(1, 2).Select(i =>
-            $"\t<Label Name=\"coop_owner_label_{i}\" Text=\"#coop_owner_{i}\" Style=\"LabelTacticsPartySlotHealth\" Anchor=\"North\" Width=\"100%\" Height=\"40\" Hidden=\"True\" />\r\n\t\t\t"));
+            $"\t<Label Name=\"coop_owner_label_{i}\" Text=\"#coop_owner_{i}\" Style=\"CoopOwnerLabel{i}\" Anchor=\"North\" Margins=\"auto -50 auto auto\" Width=\"300\" Height=\"48\" MaxWidth=\"300\" MinScale=\"0.5\" Hidden=\"True\" />\r\n\t\t\t"));
         var style = string.Concat(Enumerable.Range(1, 2).Select(i =>
-            $"<Style Name=\"CoopOwnerFrame{i}\">\r\n\t\t\t<Background>\r\n\t\t\t\t<Texture>Textures/UI/Combat/party_slot_selected.png</Texture>\r\n" +
-            $"\t\t\t\t<TextureColor>{OwnerColors[i - 1]}</TextureColor>\r\n\t\t\t</Background>\r\n\t\t</Style>\r\n\t\t"));
+            $"<Style Name=\"CoopOwnerFrame{i}\">\r\n\t\t\t<Background>\r\n\t\t\t\t<Texture>Textures/UI/Combat/{OwnerFrames[i - 1]}.png</Texture>\r\n" +
+            $"\t\t\t\t<TextureColor>{OwnerColors[i - 1]}</TextureColor>\r\n\t\t\t</Background>\r\n\t\t</Style>\r\n\t\t" +
+            $"<Style Name=\"CoopOwnerLabel{i}\">\r\n\t\t\t<TextSettings>label_generic_small_drop</TextSettings>\r\n" +
+            $"\t\t\t<ContentAlignment>c</ContentAlignment>\r\n\t\t\t<ContentColor>{OwnerTextColors[i - 1]}</ContentColor>\r\n\t\t</Style>\r\n\t\t"));
         xml = xml.Insert(close, labels).Insert(open, frames).Insert(styles, style);   // back to front: offsets stay valid
         ctx.Content.WriteText(file, xml, bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
     }

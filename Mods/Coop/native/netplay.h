@@ -25,6 +25,8 @@ int NetParseLine(const char *line, void *entry);
 size_t NetEntrySize(void);
 /* GetTickCount64 of the last tactics world update (0 = none yet): the input lock lets everyone play while it stalls. */
 unsigned long long NetWorldTick(void);
+/* The same, only in a combat mission (not the bar, the submarine, a shop): what the host's save counts as "in a battle". */
+unsigned long long NetBattleTick(void);
 /* GetTickCount64 of the last tutorial popup Show (0 = none yet): the input lock lets everyone close it. */
 unsigned long long NetPopupTick(void);
 

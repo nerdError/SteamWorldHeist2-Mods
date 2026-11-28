@@ -115,7 +115,17 @@ static int guestWait;   /* autoplay host: frames waited for the guest's command 
  * autoplay script waits) until the guest's game says "ready" from its own mission world — so the host can't play
  * ahead while the guest still loads or watches the intro. The guest says it on every connect (reconnects too). */
 static int guestIn;
-#define HELD() (hosting && !guestIn && !guestAway)
+/* Combat mission or not (2026-11-28, laptop test 9): the bar, the submarine and the shops are tactics scenes too
+ * (missions with StartingMode Roaming), so the host's visit to the bar was a "new battle": the guest was sent to the
+ * main menu and into the bar after it, came there late, and missed the host's real mission that followed. Only a combat
+ * mission's script carries the Co-op mission hook: its C.Enter writes swh2_net_combat.txt (deleted with every new
+ * scene). combatScene: -1 not known yet, 0 not a combat mission (known after COMBAT_WAIT frames), 1 combat. battleTick =
+ * the world update's heartbeat in a combat mission only: saves "in a battle", "out of the battle" of a guest. */
+static int combatScene = -1;
+static ULONGLONG battleTick;
+static wchar_t combatPath[MAX_PATH];
+#define COMBAT_WAIT 180
+#define HELD() (hosting && !guestIn && !guestAway && combatScene != 0)
 static int joinedMid;      /* guest: its save is from inside the host's mission (session "from"): no scene line comes */
 static int readySentFor;   /* guest: the connect (NetTcpReconnects() + 1) "ready" was sent on */
 static int ordSeeded;      /* guest, joinedMid: the host's ordinals are in (once per joined battle) */
@@ -200,14 +210,30 @@ static void Notify(const char *name, int actor)
  * OTHER player's crewmates kept all their points: no turn end in a mission part without enemies (no end turn button),
  * both players stood with nothing to do. Now the owner's game sends its crewmates' points whenever they change
  * (host: "ap ao= v=" in its log, played by the guest after the entries that came before it; guest: "gap ao= v=" to
- * the host, set at once) and the other game sets them. */
-static void ApSet(int ao, int v)
+ * the host, set at once) and the other game sets them.
+ * 2026-11-28 (laptop test 9): with the recasts too ("rc=<index>:<uses>,..." — the Reaper's second shot after a kill)
+ * and the turn they belong to ("n=<turn ends of the host's log played>"): a guest's "0 left" of the last turn came to
+ * the host after its new turn had given everyone their points, the guest's crewmate stood there with none for a
+ * while ("one of us had energy, the other none, then it came back"). The host takes a guest's line only for its
+ * current turn. */
+static void RecastSet(void *actor, const char *list);
+static void ApSet(int ao, int v, const char *rc)
 {
     int id = IdOfOrdinal(ao, -1);
     void *a = id >= 0 && mainSim ? FindActor(mainSim, id) : NULL;
     if (!a || OwnerOf(id) == me) return;
     __try { *(int *)((char *)a + 0x90) = v; }
-    __except (EXCEPTION_EXECUTE_HANDLER) { }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    RecastSet(a, rc ? rc : "");
+}
+
+/* "rc=" of an ap line into out ("" when the line has none: no recasts). */
+static void RcOf(const char *line, char *out, int max)
+{
+    const char *p = strstr(line, " rc=");
+    out[0] = 0;
+    if (p) sscanf(p + 4, "%63[0-9:,]", out);
+    (void)max;
 }
 
 static int saveForGuest;   /* host: the guest left mid-battle: a save of this battle now (the one it comes back from) */
@@ -220,10 +246,72 @@ int NetBlockInput(void) { return inputBlockUntil && GetTickCount64() < inputBloc
 static int loaderSlot;   /* guest: the loader put the host's save into slot guestSlotPath (session "slot"): Continue at start */
 static ULONGLONG hostLeftAt;   /* live guest: when the host's "hostleft" line came (0 = not) */
 
+/* Recasts (2026-11-28, laptop test 9: the guest's Reaper killed with a shot, its second shot — kill_shot's
+ * GrantActionRecast — was never there: the host's TurnWatch saw 0 action points and ended the turn). A recast is a use
+ * of one action granted after the points are gone: [action entry + 0x28] (GrantActionRecast 0x390f00 adds to it, the
+ * wait / skip_recast 0x390a90 zeroes it). The game's own "is this actor done" (0x390dd0) asks 0x2bd030(actor): the
+ * index of the first action that may be recast, -1 none. */
+#define RVA_RecastIndex 0x2bd030
+typedef int (*RecastIndex_t)(void *actor);
+
+static int HasRecast(void *actor)
+{
+    DWORD f = ExeRva(RVA_RecastIndex);
+    if (!f) return 0;
+    __try { return ((RecastIndex_t)(base + f))(actor) >= 0; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+}
+
 static int HasPoints(void *actor)
 {
-    __try { return *(int *)((char *)actor + 0x90) > 0; }
+    int ap = 0;
+    __try { ap = *(int *)((char *)actor + 0x90); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    return ap > 0 || HasRecast(actor);
+}
+
+/* The recasts of an actor's actions as "<index>:<uses>,..." (only those above 0; "" = none). */
+static void RecastList(void *actor, char *out, int max)
+{
+    out[0] = 0;
+    __try
+    {
+        unsigned char *first = *(unsigned char **)((char *)actor + 0x50), *last = *(unsigned char **)((char *)actor + 0x58);
+        int n = (int)((last - first) / 0x38), len = 0;
+        for (int i = 0; i < n && i < 64 && len < max - 16; i++)
+        {
+            int uses = *(int *)(first + i * 0x38 + 0x28);
+            if (uses > 0) len += sprintf(out + len, "%s%d:%d", len ? "," : "", i, uses);
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { out[0] = 0; }
+}
+
+/* Sets the recasts from RecastList's text: the listed ones, the others above 0 to 0. */
+static void RecastSet(void *actor, const char *list)
+{
+    __try
+    {
+        unsigned char *first = *(unsigned char **)((char *)actor + 0x50), *last = *(unsigned char **)((char *)actor + 0x58);
+        int n = (int)((last - first) / 0x38);
+        int want[64];
+        for (int i = 0; i < 64; i++) want[i] = 0;
+        for (const char *p = list; p && *p;)
+        {
+            int i, uses, used = 0;
+            if (sscanf(p, "%d:%d%n", &i, &uses, &used) < 2) break;
+            if (i >= 0 && i < 64) want[i] = uses;
+            p += used;
+            if (*p != ',') break;
+            p++;
+        }
+        for (int i = 0; i < n && i < 64; i++)
+        {
+            int *uses = (int *)(first + i * 0x38 + 0x28);
+            if (*uses > 0 || want[i] > 0) *uses = want[i];
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { }
 }
 
 static void WriteStatus(void *sim)
@@ -479,9 +567,15 @@ static int live;
  * this goes on: a camera that never ended (our own follow, SetCameraTargetEntity, read as one) held the replay for good
  * while the host played on (2026-11-28, laptop test 4). */
 #define LIVE_CAMERA_MAX 480
+/* 2026-11-28 (laptop test 9): a live guest is not held by camera sequences at all. Lockstep gives every command at the
+ * host's world step, where the host's camera was in the same state; the hold only made the guest late: a camera of the
+ * turn change that never ended without the host's next turn end held the replay for LIVE_CAMERA_MAX frames (8 s, four
+ * times in one battle: "a long pause before I see the result of a shot"), and every camera cost LIVE_CUTSCENE_QUIET
+ * frames more. A dialogue still holds (commands in one leave an empty dialogue box), at most LIVE_TALK_MAX frames. */
+#define LIVE_TALK_MAX 1800
 static int CutsceneHold(void)
 {
-    static int cameraOn, cameraFrames, cameraToldAt = -1;
+    static int cameraOn, cameraFrames, cameraToldAt = -1, talkFrames, talkToldAt = -1, afterTalk;
     if (frame % 10 == 0)
     {
         FILE *f = _wfopen(cutscenePath, L"r");
@@ -489,6 +583,24 @@ static int CutsceneHold(void)
         if (f) { if (!fgets(s, sizeof s, f)) s[0] = 0; fclose(f); }
         cutsceneOn = s[0] == '1';
         cameraOn = cutsceneOn && strncmp(s + 1, " camera", 7) == 0;
+    }
+    if (live && guest)
+    {
+        if (cutsceneOn && !cameraOn)
+        {
+            if (++talkFrames > LIVE_TALK_MAX && scriptPos < scriptLen)
+            {
+                if (talkToldAt != scriptPos) { talkToldAt = scriptPos; NetLog("# DIFF: a dialogue held replay %d for %d frames: going on", scriptPos + 1, LIVE_TALK_MAX); }
+                return 0;
+            }
+            quietFrames = 0;
+            afterTalk = 1;
+            return 1;
+        }
+        talkFrames = 0;
+        if (afterTalk && ++quietFrames < LIVE_CUTSCENE_QUIET) return 1;
+        afterTalk = 0;
+        return 0;
     }
     if (cameraOn && live && guest && scriptPos < scriptLen && ++cameraFrames > LIVE_CAMERA_MAX)
     {
@@ -1463,6 +1575,20 @@ static ULONGLONG moveSeenAt, moveSentAt;
 static wchar_t movePath[MAX_PATH];
 static struct { int id, shown, want; float x, y; } remoteMove = { -1, 0, 0, 0, 0 };
 
+static int CurrentFactionActors(void *sim, int *ids, int max);
+static int CutsceneNow(void);
+
+/* A crewmate whose faction's turn it is, with points left, the world quiet. */
+static int MayMove(int id)
+{
+    if (!mainSim || Busy(mainSim)) return 0;
+    void *a = FindActor(mainSim, id);
+    if (!a || !HasPoints(a)) return 0;
+    int ids[256], n = CurrentFactionActors(mainSim, ids, 256);
+    for (int i = 0; i < n; i++) if (ids[i] == id) return 1;
+    return 0;
+}
+
 static void MoveSend(const char *text)
 {
     if (me == 1) { if (hosting) NetLog("move %s", text); }
@@ -1492,6 +1618,9 @@ static void HookCursorNode(void *cursor, long long node, int a, int b)
     __except (EXCEPTION_EXECUTE_HANDLER) { return; }
     int ao = OrdinalOf(id);
     if (ao < 0 || !Mine(id) || !(x == x) || !(y == y)) return;
+    /* Only a crewmate that can move now (2026-11-28, laptop test 9: "a phantom pointer in random places, between the
+     * turns"): the tile cursor also runs for the selected crewmate during the other turns and with no points left. */
+    if (!MayMove(id)) return;
     ULONGLONG now = GetTickCount64();
     moveSeenAt = now;
     if (ao == moveSentOrd && x == moveSentX && y == moveSentY) return;
@@ -1542,7 +1671,7 @@ static void MoveFromLine(const char *p)
 static void MoveDraw(void *sim)
 {
     int quiet = !Busy(sim) && !(live && scriptPos < scriptLen);
-    int on = remoteMove.want && quiet && remoteMove.id >= 0;
+    int on = remoteMove.want && quiet && remoteMove.id >= 0 && MayMove(remoteMove.id);
     if (on && !remoteMove.shown) { remoteMove.shown = 1; MoveMarkerFile(1); }
     else if (!on && remoteMove.shown) { remoteMove.shown = 0; MoveMarkerFile(0); }
 }
@@ -1728,18 +1857,31 @@ static int SyncDone(int wanted, int *missing, int *changed)
 /* Hard correction (live guest): an actor died here but lives at the host — the soft correction can't bring it back
  * (2026-11-27: the guest's shot killed an enemy the same shot at the host left alive). The guest quits to the menu and
  * joins the host's battle again from the host's latest save, then catches up with its log. At most once a minute. */
-static void Resync(int missing)
+static long long needFrom;   /* guest: the host's save must be from this host log byte on (0: any) */
+static long long scriptOffset;  /* bytes of the replay file already read */
+/* The host is asked for a fresh save ("wantsave": it saves once its battle runs) and this game takes only one written
+ * after what it has read: a stuck guest that went back to an old save ended up just as stuck. */
+static void Rejoin(const char *why)
 {
     static ULONGLONG last;
     ULONGLONG now = GetTickCount64();
     if (last && now - last < 60000)
     {
-        NetLog("# DIFF: %d actors of the host's state gone here; rejoined less than a minute ago, playing on", missing);
+        NetLog("# DIFF: %s; rejoined less than a minute ago, playing on", why);
         return;
     }
     last = now;
-    NetLog("# DIFF: %d actors of the host's state gone here: rejoining the host's battle from its save", missing);
+    NetLog("# DIFF: %s: rejoining the host's battle from a new save of it", why);
+    NetTcpSend("wantsave");
+    needFrom = NetTcpBase() + scriptOffset;
     NetQuitToMenu();
+}
+
+static void Resync(int missing)
+{
+    char why[64];
+    sprintf(why, "%d actors of the host's state gone here", missing);
+    Rejoin(why);
 }
 
 static void SyncRequest(int wanted)
@@ -1970,7 +2112,19 @@ static void HostPlay(void *sim, const char *line)
     if (strncmp(line, "gap ", 4) == 0)
     {
         int gao, gv;
-        if (sscanf(line + 4, "ao=%d v=%d", &gao, &gv) == 2 && OwnerOf(IdOfOrdinal(gao, -1)) == 2) ApSet(gao, gv);
+        char rc[64];
+        const char *pn = strstr(line, " n=");
+        RcOf(line, rc, sizeof rc);
+        if (sscanf(line + 4, "ao=%d v=%d", &gao, &gv) != 2 || OwnerOf(IdOfOrdinal(gao, -1)) != 2) return;
+        if (pn && atoi(pn + 3) != endsLogged) { NetLog("# guest's action points for turn %d ignored (this is turn %d)", atoi(pn + 3), endsLogged); return; }
+        ApSet(gao, gv, rc);
+        return;
+    }
+    if (strcmp(line, "wantsave") == 0)
+    {
+        /* The guest rejoins (stuck, or a hard correction): from a save of now, not an old one. */
+        NetLog("# the guest rejoins: a save of this battle asked for");
+        saveForGuest = 1;
         return;
     }
     if (strcmp(line, "left") == 0)
@@ -2119,7 +2273,6 @@ static long long sceneCheckpoint[16];   /* guest: > 0 = that scene is the host's
 static long long checkpointLine;        /* guest: a "checkpoint" line arrived (host log byte after it), its scene comes next */
 static int saveAfterCheckpoint;         /* host: 1 = a checkpoint was loaded, 2 = its scene made (the old battle's ticks don't count) */
 static ULONGLONG checkpointSceneAt;     /* host: when that scene was made */
-static long long needFrom;              /* guest: the host's save must be from this host log byte on (0: any) */
 
 /* Guest: the host won: tell the mission Lua once everything before the "won" line is played here and the world is
  * quiet — or after 10 s anyway, or at once when the host is in its next scene already (this replay is over). */
@@ -2359,18 +2512,27 @@ static void QuietReport(void *sim)
         void *a = FindActor(sim, crewIds[i]);
         int ap = -99;
         if (a) __try { ap = *(int *)((char *)a + 0x90); } __except (EXCEPTION_EXECUTE_HANDLER) { }
-        len += sprintf(text + len, " %d:%d", crewIds[i], ap);
+        len += sprintf(text + len, " %d:%d%s", crewIds[i], ap, a && HasRecast(a) ? "+recast" : "");
     }
     NetLog("%s", text);
 }
 
-static struct { int ao, v, at; } apPend[32];
+static struct { int ao, v, at; char rc[64]; } apPend[32];
 static int apPendLen;
+
+/* Guest: turn ends of the host's log this game has played (as the host counts them: from its game start). */
+static int EndsPlayed(void)
+{
+    int ahead = 0;
+    for (int k = scriptPos; k < scriptLen; k++) if (script[k].kind == 'e') ahead++;
+    return endsArrived - ahead + earlyEnds;
+}
 
 static void ApWatch(void *sim)
 {
     static int sent[64], scene = -1;
-    if (scene != scenesMade) { scene = scenesMade; for (int i = 0; i < 64; i++) sent[i] = -99; apPendLen = 0; }
+    static char sentRc[64][64];
+    if (scene != scenesMade) { scene = scenesMade; for (int i = 0; i < 64; i++) { sent[i] = -99; sentRc[i][0] = 0; } apPendLen = 0; }
     for (int i = 0; i < crewLen && i < 64; i++)
     {
         if ((i % 2 == 0 ? 1 : 2) != me) continue;
@@ -2379,17 +2541,21 @@ static void ApWatch(void *sim)
         if (!a || ao < 0) continue;
         __try { ap = *(int *)((char *)a + 0x90); }
         __except (EXCEPTION_EXECUTE_HANDLER) { continue; }
-        if (ap == sent[i]) continue;
+        char rc[64];
+        RecastList(a, rc, sizeof rc);
+        if (ap == sent[i] && strcmp(rc, sentRc[i]) == 0) continue;
         sent[i] = ap;
-        char line[48];
-        sprintf(line, "ap ao=%d v=%d", ao, ap);
+        strcpy(sentRc[i], rc);
+        char line[160];
+        int len = sprintf(line, "ap ao=%d v=%d n=%d", ao, ap, me == 1 ? endsLogged : EndsPlayed());
+        if (rc[0]) sprintf(line + len, " rc=%s", rc);
         if (me == 1) { if (hosting) NetLog("%s", line); }
-        else if (live) { char g[56]; sprintf(g, "g%s", line); NetTcpSend(g); }
+        else if (live) { char g[168]; sprintf(g, "g%s", line); NetTcpSend(g); }
     }
     /* guest: the host's values, once the entries before them are played here */
     int k = 0;
     for (int j = 0; j < apPendLen; j++)
-        if (scriptPos >= apPend[j].at) ApSet(apPend[j].ao, apPend[j].v);
+        if (scriptPos >= apPend[j].at) ApSet(apPend[j].ao, apPend[j].v, apPend[j].rc);
         else apPend[k++] = apPend[j];
     apPendLen = k;
 }
@@ -2469,6 +2635,66 @@ static void WatchOther(void)
     }
 }
 
+/* The crew's turn with nothing selected (2026-11-28, laptop test 9: "the turn starts but my crewmate isn't selected, I
+ * have to press a key first"). At the turn start the game selects the crewmate selected last time or the first one it
+ * may select (0x4807d5 -> SelectActor 0x45a210 / 0x45a770) — at that moment the remembered one could be the other
+ * player's, or ours without points yet (they come over the network a moment later): nothing got selected. Now, when it
+ * is this player's crew's turn, one of its crewmates has points, nothing is selected and the world has been quiet for
+ * a while, the first selectable one is selected (0x45a770(PlayerTurnSimulator), the game's own pick). */
+#define RVA_SelectFirst 0x45a770
+typedef void (*SelectFirst_t)(void *pts);
+
+static void SelectWatch(void *sim)
+{
+    static int waited;
+    static unsigned lastTry;
+    DWORD selected = ExeRva(RVA_PtsSelected), first = ExeRva(RVA_SelectFirst);
+    void *pts = lastPts, *sel = NULL;
+    if (!pts || !selected || !first || combatScene != 1 || HELD() || Busy(sim) || CutsceneNow() || (live && scriptPos < scriptLen) || (live && pending))
+    {
+        waited = 0;
+        return;
+    }
+    __try { sel = ((PtsSelected_t)(base + selected))(pts); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { waited = 0; return; }
+    if (sel) { waited = 0; return; }
+    int ids[256], n = CurrentFactionActors(sim, ids, 256), ready = 0;
+    for (int i = 0; i < n && !ready; i++)
+    {
+        int owner = OwnerOf(ids[i]);
+        void *a = owner == me || (me == 1 && owner == 2 && guestAway) ? FindActor(sim, ids[i]) : NULL;
+        if (a && HasPoints(a)) ready = 1;
+    }
+    if (!ready) { waited = 0; return; }
+    if (++waited < 40 || (lastTry && frame - lastTry < 120)) return;
+    waited = 0;
+    lastTry = frame;
+    __try { ((SelectFirst_t)(base + first))(pts); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { NetLog("# ERROR: selecting a crewmate failed"); return; }
+    NetLog("# turn: no crewmate of this player was selected: the first one with points selected");
+}
+
+/* Live guest: the replay has not moved for STUCK_MS while the host's log had more for it (2026-11-28, laptop test 9:
+ * "the game hangs; ideally it would fix itself after a timeout") — it rejoins the host's battle from a new save. */
+#define STUCK_MS 60000
+static void StuckWatch(void)
+{
+    static int pos = -1;
+    static ULONGLONG since;
+    ULONGLONG now = GetTickCount64();
+    if (scriptPos != pos || scriptPos >= scriptLen || HostMovedOn() || combatScene != 1 || !since)
+    {
+        pos = scriptPos;
+        since = now;
+        return;
+    }
+    if (now - since < STUCK_MS) return;
+    since = now;
+    char why[96];
+    sprintf(why, "replay %d of %d stuck for %d s", scriptPos + 1, scriptLen, STUCK_MS / 1000);
+    Rejoin(why);
+}
+
 static ULONG_PTR HookSimUpdate(void *sim, void *arg)
 {
     worldTick = GetTickCount64();   /* heartbeat for the input lock: no update = paused, menu, loading */
@@ -2477,11 +2703,26 @@ static ULONG_PTR HookSimUpdate(void *sim, void *arg)
         frame++;
         mainSim = sim;   /* the one tactics world (previews run on copies) */
         ScanActors(sim);
+        static unsigned sceneFrames;
+        static int sceneSeen = -1;
+        if (sceneSeen != scenesMade) { sceneSeen = scenesMade; sceneFrames = 0; }
+        sceneFrames++;
+        if (combatScene != 1 && sceneFrames % 15 == 0)
+        {
+            if (GetFileAttributesW(combatPath) != INVALID_FILE_ATTRIBUTES) { combatScene = 1; NetLog("# a combat mission"); }
+            else if (combatScene < 0 && sceneFrames >= COMBAT_WAIT)
+            {
+                combatScene = 0;
+                NetLog(me == 1 ? "# not a combat mission (bar, submarine, shop): the guest isn't waited for, and doesn't follow here"
+                               : "# not a combat mission (bar, submarine, shop)");
+            }
+        }
+        if (combatScene == 1) battleTick = GetTickCount64();
         /* Again every ~5 s: the host may load the mission after this game did (its new mission resets the wait). */
         static unsigned readyAt;
         /* Not from a battle the host has left: a guest frozen in its old mission said "ready" for the host's next one,
-         * which then ran as if the guest were in (2026-11-28, laptop test 5). */
-        if (me == 2 && NetTcpState() == NET_TCP_CONNECTED && !HostMovedOn() && (readySentFor != NetTcpReconnects() + 1 || frame - readyAt >= 300) && NetTcpSend("ready"))
+         * which then ran as if the guest were in (2026-11-28, laptop test 5). Only from a combat mission. */
+        if (me == 2 && combatScene == 1 && NetTcpState() == NET_TCP_CONNECTED && !HostMovedOn() && (readySentFor != NetTcpReconnects() + 1 || frame - readyAt >= 300) && NetTcpSend("ready"))
         {
             if (readySentFor != NetTcpReconnects() + 1) NetLog("# to host: ready (this game is in the battle)");
             readySentFor = NetTcpReconnects() + 1;
@@ -2493,13 +2734,15 @@ static ULONG_PTR HookSimUpdate(void *sim, void *arg)
         if (hosting) { HostPump(sim); TurnWatch(sim); }
         if (me && sim == mainSim) ApWatch(sim);
         Pump(sim);
-        if (me && sim == mainSim) { AimWatch(); AimDraw(sim); MoveWatch(); MoveDraw(sim); }
+        if (me && sim == mainSim) { AimWatch(); AimDraw(sim); MoveWatch(); MoveDraw(sim); SelectWatch(sim); }
+        if (me == 2 && live) StuckWatch();
 
     }
     return realSimUpdate(sim, arg);
 }
 
 unsigned long long NetWorldTick(void) { return worldTick; }
+unsigned long long NetBattleTick(void) { return battleTick; }
 
 /* Fixed time step for the tactics world (netplay test on): the world update 0x480a10(world, game, WorldDt *dt) normally
  * gets the frame time, and projectiles / movement integrate with it — run 8: the same enemy shot at the same RNG state
@@ -2586,7 +2829,7 @@ static void PoseStep(void *world, void *game, float step)
  * it just counts from the host's step. Not held while actions run or a dialogue / camera is on (they need the world,
  * and the host's took as long as it took there), or after HOLD_MAX frames held: a world gone past the host's step
  * counts on from the next command (Pump). Joined from the host's save: counts from the first host step after it. */
-#define K_EVERY 6
+#define K_EVERY 3   /* was 6: the guest knows the host's step sooner, stands still less */
 #define CATCH_UP_STEPS 20
 #define JUMP_STEPS 600
 #define HOLD_MAX 1200
@@ -2626,8 +2869,23 @@ static ULONG_PTR HookWorldUpdate(void *world, void *game, WorldDt *dt)
         NetLog("# world steps: %lld behind the host, counted from its step %lld", cap - (long long)worldSteps, cap);
         worldSteps = (unsigned long long)cap;
     }
-    if (cap >= 0 && cap - (long long)worldSteps >= CATCH_UP_STEPS) behind = 1;
+    /* Live: the pace follows the distance to the host's latest step (2026-11-28, laptop test 9: "jerks", "it
+     * stutters"): the world ran up to the latest step known, stood still until the next "k" line came (a few times a
+     * second, as the network delivered them), and ran 3 times as fast whenever 3 entries waited (an enemy's aim and
+     * shot and the next one's move) or it was a third of a second behind. Now it is fast only when far behind (a rejoin:
+     * the host's turn replayed from its save), else slows down a little near that step and speeds up a little when it
+     * falls behind, so it rarely has to stand still. */
+    long long lag = cap >= 0 && live && hostSteps >= 0 ? hostSteps - (long long)worldSteps : -1;
+    if (behind && lag >= 0 && lag < CATCH_UP_STEPS * 3) behind = 0;
+    if (lag >= CATCH_UP_STEPS * 6) behind = 1;
     if (behind) d *= CATCH_UP;
+    else if (lag >= 0)
+    {
+        int command = scriptPos < scriptLen;
+        if (lag > 40) d *= 1.5f;
+        else if (lag > 12) d *= 1.15f;
+        else if (!command && lag < 4) d *= 0.8f;
+    }
     stepAcc += d;
     ULONG_PTR r = 0;
     int n = 0, held = 0;
@@ -2760,6 +3018,9 @@ static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
 {
     unsigned *r = Rng();
     int inside = 0;   /* guest: joined inside the host's battle */
+    combatScene = -1;   /* the mission script (if it is a combat mission) writes the file again */
+    DeleteFileW(combatPath);
+    lastPts = NULL;     /* the old scene's PlayerTurnSimulator */
     if (rejoinPending && live)
     {
         /* The battle of the host's save written at the main menu: the replay starts over at that point of the log. */
@@ -2902,7 +3163,6 @@ static int Append(Entry ***list, int *len, const Entry *e)
 
 static wchar_t hostInfo[160];   /* live: "host:port" for the log */
 
-static long long scriptOffset;  /* bytes of the replay file already read */
 static int statesRecorded, scriptCap, aiCommands;
 
 static void ParseScriptLine(const char *line)
@@ -2985,6 +3245,7 @@ static void ParseScriptLine(const char *line)
         if (live && apPendLen < 32 && sscanf(line + 3, "ao=%d v=%d", &pao, &pv) == 2)
         {
             apPend[apPendLen].ao = pao; apPend[apPendLen].v = pv; apPend[apPendLen].at = scriptLen;
+            RcOf(line, apPend[apPendLen].rc, sizeof apPend[apPendLen].rc);
             apPendLen++;
         }
         return;
@@ -3157,6 +3418,37 @@ static void HookCheckpoint(void *game)
 
 void NetLoadCheckpoint(void) { checkpointWanted = 1; }
 
+/* The pause menu's System page (0x1bd130(menu), when it opens: shows "Load Checkpoint" [menu + 0xe8] and "Abort
+ * Mission" [menu + 0xe0] in a battle, hidden = widget flags + 0x2c0 bit 4, bit 2 its shadow, 0x7535b0 = layout again).
+ * A guest's checkpoint load or abort leaves the host's battle — the game went on as single-player (2026-11-28, laptop
+ * test 9): the guest's are hidden; the host's work and the guest follows them. */
+typedef void (*PauseSystem_t)(void *menu);
+typedef void (*LayoutDirty_t)(void *widget);
+static PauseSystem_t realPauseSystem;
+#define RVA_PauseSystem 0x1bd130
+#define RVA_LayoutDirty 0x7535b0
+
+static void HookPauseSystem(void *menu)
+{
+    realPauseSystem(menu);
+    if (me != 2 || !live) return;
+    DWORD dirty = ExeRva(RVA_LayoutDirty);
+    static const int buttons[] = { 0xe8, 0xe0 };
+    for (int i = 0; i < 2; i++)
+    {
+        __try
+        {
+            char *b = *(char **)((char *)menu + buttons[i]);
+            if (!b) continue;
+            unsigned *flags = (unsigned *)(b + 0x2c0);
+            if (*flags & 4) continue;
+            *flags |= 4 | 2;
+            if (dirty) ((LayoutDirty_t)(base + dirty))(b);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { }
+    }
+}
+
 int NetLogHas(const char *text)
 {
     if (!outPath[0]) return 0;
@@ -3191,8 +3483,8 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
 {
     ULONG_PTR r = realGameUpdate(game, dt);
     menuSince = 0;
-    int battle = *(int *)((char *)game + 0x110) <= 1, ticking = worldTick && GetTickCount64() - worldTick < 1000;
-    if (saveAfterCheckpoint == 2 && battle && ticking && worldTick > checkpointSceneAt)
+    int battle = *(int *)((char *)game + 0x110) <= 1, ticking = battleTick && GetTickCount64() - battleTick < 1000;
+    if (saveAfterCheckpoint == 2 && battle && ticking && battleTick > checkpointSceneAt)
     {
         saveAfterCheckpoint = 0;
         *((unsigned char *)game + 0xb4) = 1;
@@ -3239,7 +3531,7 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
  * host's quit from its battle sends the guest to the main menu too ("hostleft"). */
 static ULONG_PTR HookQuit(void *game, void *a2, void *a3, void *a4)
 {
-    int ours = quitWanted, inBattle = worldTick && GetTickCount64() - worldTick < 2000;
+    int ours = quitWanted, inBattle = battleTick && GetTickCount64() - battleTick < 2000;
     quitWanted = 0;
     if (me == 2 && inBattle)
     {
@@ -3408,7 +3700,7 @@ static void SteamVersionCheck(void)
     {
         /* The popup shows only for an event that comes after the battle's first status read (coop.lua netEvent). */
         ULONGLONG now = GetTickCount64();
-        if (!worldTick || now - worldTick > 1000) { inBattleSince = 0; return; }
+        if (!battleTick || now - battleTick > 1000) { inBattleSince = 0; return; }
         if (!inBattleSince) inBattleSince = now;
         if (now - inBattleSince > 5000) { popupDue = 0; Notify("version", 0); }
         return;
@@ -3436,7 +3728,7 @@ void NetIdle(void)
     if (now - last < 500) return;
     last = now;
     static int idleLogged;
-    if (worldTick && now - worldTick < 3000) { wasInBattle = 1; idleLogged = 0; return; }
+    if (battleTick && now - battleTick < 3000) { wasInBattle = 1; idleLogged = 0; return; }
     /* Before the first battle the loader put the save there already — unless the game came from Steam's "Join game". */
     if ((!wasInBattle && loaderSave) || rejoinPending) return;
     if (!idleLogged) { idleLogged = 1; NetLog("# guest: out of the battle: asking the host for its save every 3 s"); }
@@ -3906,6 +4198,8 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     DeleteFileW(wonPath);
     _snwprintf(movePath, MAX_PATH, L"%s\\swh2_net_move.txt", dir);
     DeleteFileW(movePath);
+    _snwprintf(combatPath, MAX_PATH, L"%s\\swh2_net_combat.txt", dir);
+    DeleteFileW(combatPath);
 
     if (hostPort > 0)
         NetLog(NetTcpHost(bindAddr, hostPort, outPath) ? "# host: guests connect to %s port %d" : "# ERROR: host on %s port %d not started",
@@ -3961,6 +4255,10 @@ void NetInstall(char *exeBase, const wchar_t *dir)
             realMenuUpdate = (MenuUpdate_t)InlineHook(RVA_MenuUpdate, menuUpdate, sizeof menuUpdate, (void *)HookMenuUpdate);
             NetLog(realGameUpdate && realQuit && realMenuUpdate ? "# guest: the next battle joins without a restart (to the main menu, Continue: by itself)"
                                                                 : "# ERROR: guest: main menu hooks not installed: restart the game for the next battle");
+            static const unsigned char pauseSystem[] = { 0x48,0x89,0x5c,0x24,0x08,0x57,0x48,0x83,0xec,0x30,0x48,0x8d,0x99,0x90,0x00,0x00,0x00 };
+            realPauseSystem = (PauseSystem_t)InlineHook(RVA_PauseSystem, pauseSystem, sizeof pauseSystem, (void *)HookPauseSystem);
+            NetLog(realPauseSystem ? "# guest: Load Checkpoint and Abort Mission hidden in the pause menu (the host's battle goes on)"
+                                   : "# ERROR: guest: pause menu hook not installed: Load Checkpoint / Abort Mission leave the host's battle");
         }
     }
     realRequestAction = (RequestAction_t)InlineHook(RVA_RequestAction, requestAction, sizeof requestAction, (void *)HookRequestAction);

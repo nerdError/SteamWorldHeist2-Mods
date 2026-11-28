@@ -146,13 +146,18 @@ do
 		C.netWrite("# mission over: crew lost")
 	end
 
+	-- A dialogue lasts from StartConversation while its camera sequence runs (at least 120 frames): told apart from a
+	-- mere camera move, which no longer holds a live guest's replay (netplay.c CutsceneHold).
+	local talking = false
 	local function netCutscene()
 		frameNo = frameNo + 1
 		-- A pan of our own to the other player's action is no mission cutscene (the replay would wait for it).
 		local ourPan = C.netFocus(frameNo, netApi)
-		local camera = IsCameraSequenceActive() and not ourPan
-		local convo = convoAt ~= nil and frameNo - convoAt < 120
-		C.netCutscene(camera or convo, camera and "camera" or (convo and "conversation" or nil))
+		local active = IsCameraSequenceActive()
+		local camera = active and not ourPan
+		if convoAt ~= nil and frameNo - convoAt < 120 then talking = true
+		elseif talking and not active then talking = false end
+		C.netCutscene(camera or talking, talking and "conversation" or (camera and "camera" or nil))
 	end
 
 	-- Netplay: the crew for the owner split and the HUD status, twice a second.
