@@ -33,6 +33,7 @@ public sealed partial class CoopMod : IModPlugin
         ctx.Lua.AddGlobalModule("coop", CoopInstall.CoopLua(2, [], crew.Personas, crew.Entities,
             s.Bool("labelTurn"), s.Bool("labelSelect"), inputLock: false, netplay: true, ["all", "all", "all", "all"], s.Bool("labelAlways")));
         int scripts = CoopInstall.HookMissions(ctx);
+        HookWorldMap(ctx);
         CoopInstall.AddModifiers(ctx);
         AddStrings(ctx);
         AddCounters(ctx);
@@ -58,7 +59,7 @@ public sealed partial class CoopMod : IModPlugin
     /// </summary>
     static readonly string[] NameKeys =
     [
-        "coop_owner_1", "coop_owner_2",
+        "coop_owner_1", "coop_owner_2", "coop_move_1", "coop_move_2",
         "coop_net_host_waiting", "coop_net_host_connected", "coop_net_host_closed", "coop_net_host_failed", "coop_net_host_joining",
         "coop_net_guest_waiting", "coop_net_guest_connected", "coop_net_guest_closed", "coop_net_guest_failed",
         "coop_net_turn_both", "coop_net_turn_p1", "coop_net_turn_p2", "coop_net_turn_enemy",
@@ -66,11 +67,11 @@ public sealed partial class CoopMod : IModPlugin
         "tutorial_coop_net_guest_lost", "tutorial_coop_net_guest_lost_page1", "tutorial_coop_net_host_left", "tutorial_coop_net_host_left_page1",
         "tutorial_coop_net_host_lost", "tutorial_coop_net_host_lost_page1",
         "coop_net_refused_cell", "coop_net_refused_gone", "coop_net_refused_notyours", "coop_net_refused_bad",
-        "tutorial_coop_net_version", "tutorial_coop_net_version_page1",
+        "tutorial_coop_net_version", "tutorial_coop_net_version_page1", "tutorial_coop_net_wait_host", "tutorial_coop_net_wait_host_page1",
     ];
 
     /// <summary>Notifications in the game's popup window (the dll's events, coop.lua netEvent): tutorials_popup.xml.</summary>
-    static readonly string[] Popups = ["guest_left", "guest_back", "guest_lost", "host_left", "host_lost", "version"];
+    static readonly string[] Popups = ["guest_left", "guest_back", "guest_lost", "host_left", "host_lost", "version", "wait_host"];
 
     static void AddStrings(ModContext ctx)
     {
@@ -80,6 +81,8 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_default_2"] = "Guest",
             ["coop_owner_1"] = "{1}",
             ["coop_owner_2"] = "{2}",
+            ["coop_move_1"] = "[ {1} ]",
+            ["coop_move_2"] = "[ {2} ]",
             ["coop_net_host_waiting"] = "Host · waiting for a player",
             ["coop_net_host_connected"] = "Host · {2} connected",
             ["coop_net_host_closed"] = "Host · {2} left",
@@ -108,6 +111,8 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_refused_notyours"] = "Not accepted by {1}",
             ["coop_net_refused_bad"] = "Not accepted by {1}",
             ["tutorial_coop_net_version"] = "Another NE Co-op version than {1}'s",
+            ["tutorial_coop_net_wait_host"] = "Waiting for {1}",
+            ["tutorial_coop_net_wait_host_page1"] = "The battle is won. When {1} starts the next mission, your game goes there by itself (through the main menu, a few seconds). Until then you can look around the map.",
             ["tutorial_coop_net_version_page1"] = "You and {1} have different versions of NE Co-op. The battle may go differently in the two games: install the same version on both PCs (the loader of the newer one, Apply to game).",
         };
         var ru = new Dictionary<string, string>
@@ -116,6 +121,8 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_default_2"] = "Гость",
             ["coop_owner_1"] = "{1}",
             ["coop_owner_2"] = "{2}",
+            ["coop_move_1"] = "[ {1} ]",
+            ["coop_move_2"] = "[ {2} ]",
             ["coop_net_host_waiting"] = "Хост · ждём второго игрока",
             ["coop_net_host_connected"] = "Хост · на связи: {2}",
             ["coop_net_host_closed"] = "Хост · отключился: {2}",
@@ -144,6 +151,8 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_refused_notyours"] = "{1}: команда не принята",
             ["coop_net_refused_bad"] = "{1}: команда не принята",
             ["tutorial_coop_net_version"] = "Версия NE Co-op не как у {1}",
+            ["tutorial_coop_net_wait_host"] = "Ждём {1}",
+            ["tutorial_coop_net_wait_host_page1"] = "Бой выигран. Когда {1} начнёт следующую миссию, твоя игра перейдёт туда сама (через главное меню, несколько секунд). А пока можно осмотреть карту.",
             ["tutorial_coop_net_version_page1"] = "У тебя и у {1} разные версии NE Co-op. Бой в двух играх может пойти по-разному: поставьте одну версию на оба ПК (загрузчик новой версии, Apply to game).",
         };
         Dictionary<string, string> Full(Dictionary<string, string> t)
@@ -188,6 +197,14 @@ public sealed partial class CoopMod : IModPlugin
     /// The dll's notifications in the game's own popup window (TutorialPopup with force, so it shows every time): one
     /// tutorial per event, one page, title tutorial_&lt;name&gt; (the game's rule), texts with the nicknames.
     /// </summary>
+    /// <summary>The world map hook (Lua/map_hook.lua, OnEnterMap): a guest back from a won battle is told it waits for the host.</summary>
+    static void HookWorldMap(ModContext ctx)
+    {
+        const string file = "Lua/WorldMap/worldmap.lua";
+        var hook = CoopInstall.Resource("map_hook.lua").TrimEnd();
+        ctx.Content.WriteText(file, ctx.Content.ReadText(file).TrimEnd() + "\r\n\r\n" + hook + "\r\n", bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
+    }
+
     static void AddPopups(ModContext ctx)
     {
         const string file = "Definitions/tutorials_popup.xml", close = "</Tutorials>";
@@ -225,6 +242,20 @@ public sealed partial class CoopMod : IModPlugin
             "\t\t\t<Fade Delay=\"4\">0.25</Fade>\r\n" +
             "\t\t\t<SpawnDelay IgnoreWhenOver=\"0\">0</SpawnDelay>\r\n" +
             "\t\t\t<Offset>0,-40</Offset>\r\n" +
+            "\t\t\t<HideInCutscenes>true</HideInCutscenes>\r\n" +
+            "\t\t</WorldText>\r\n" +
+            "\t</Entity>\r\n")) +
+            // The other player's move target (coop.lua C.netMove): "[ nick ]" standing on the tile, until destroyed.
+            "\t<!-- SWH2 Co-op: the tile the other player points at for a move -->\r\n" + string.Concat(Enumerable.Range(1, 2).Select(i =>
+            $"\t<Entity Name=\"coop_move_{i}\" Template=\"WORLDTEXT\">\r\n" +
+            "\t\t<WorldText>\r\n" +
+            $"\t\t\t<TextStringId>coop_move_{i}</TextStringId>\r\n" +
+            "\t\t\t<Velocity>0,0</Velocity>\r\n" +
+            $"\t\t\t<Color>{TagColors[i - 1]}</Color>\r\n" +
+            "\t\t\t<Scale Start=\"1.6\" Time=\"0.15\">1.2</Scale>\r\n" +
+            "\t\t\t<Fade Delay=\"3600\">0.2</Fade>\r\n" +
+            "\t\t\t<SpawnDelay IgnoreWhenOver=\"0\">0</SpawnDelay>\r\n" +
+            "\t\t\t<Offset>0,-30</Offset>\r\n" +
             "\t\t\t<HideInCutscenes>true</HideInCutscenes>\r\n" +
             "\t\t</WorldText>\r\n" +
             "\t</Entity>\r\n"));

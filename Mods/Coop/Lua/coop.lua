@@ -78,7 +78,7 @@ function C.Enter(script)
 	C.netLog = nil
 	C.netCleared = false   -- netplay status counters of this battle not removed yet
 	C.netCrewList, C.netPersona, C.netRole = {}, {}, nil
-	C.netEventSeq, C.focus, C.tags, C.netCam = nil, {}, {}, nil   -- notifications / camera / name tags of this battle
+	C.netEventSeq, C.focus, C.tags, C.netCam, C.moveSeq = nil, {}, {}, nil, nil   -- notifications / camera / name tags of this battle
 	netOwners = {}
 	if os and os.remove then os.remove(file("swh2_net_crew.txt")) end
 	f = C.netTest and io.open(file(NETMODE), "r")
@@ -399,6 +399,45 @@ function C.netWon(frameNo, E)
 	if os and os.remove then os.remove(file(WON)) end
 	C.netWrite("# the host won: this mission ends in victory too")
 	E.EndMissionInVictory(1.0)
+end
+
+-- The other player's move target: the dll writes swh2_net_move.txt "<seq> <actor id> <owner> <x> <y>" while that
+-- player points at a tile for its selected crewmate, "<seq> off" when not (netplay.c MoveDraw). Shown as a world text
+-- with the owner's nick standing on that tile (entities.worldtexts.xml coop_move_N, no fade): spawned under a name of
+-- ours, destroyed when it moves or goes. E = { SpawnEntity, DestroyEntity, FindEntityWithName, Vector }.
+local MOVE, MARKER = "swh2_net_move.txt", "coop_move_marker"
+C.moveSeq = nil
+function C.netMove(frameNo, E)
+	if frameNo % 3 ~= 0 then return end
+	local f = io.open(file(MOVE), "r")
+	local line = f and f:read("*l")
+	if f then f:close() end
+	local seq = line and line:match("^(%d+)")
+	if not seq or seq == C.moveSeq then return end
+	C.moveSeq = seq
+	local old = E.FindEntityWithName(MARKER)
+	if old then E.DestroyEntity(old) end
+	local owner, x, y = line:match("^%d+ %-?%d+ (%d) ([%-%d%.]+) ([%-%d%.]+)")
+	owner, x, y = tonumber(owner), tonumber(x), tonumber(y)
+	if not owner or owner < 1 or owner > 2 or not x or not y then return end
+	E.SpawnEntity("coop_move_" .. owner, E.Vector(x, y), E.Vector.Right, MARKER)
+end
+
+-- Guest: its battle is won and the host picks the next one. On the world map (map_hook.lua, OnEnterMap) the game's
+-- popup says so (coop_net_wait_host): the host's next battle is joined by itself (the dll: main menu, Continue).
+-- Marked by the mission hook's OnMissionVictory; a mark older than 15 min is old news.
+local MAPWAIT = "swh2_net_mapwait.txt"
+function C.netMapWaitMark()
+	local f = io.open(file(MAPWAIT), "w")
+	if f then f:write(tostring(os.time()), "\n"); f:close() end
+end
+function C.netMapWait(TutorialPopup)
+	local f = io.open(file(MAPWAIT), "r")
+	if not f then return end
+	local at = tonumber(f:read("*l") or "")
+	f:close()
+	if os and os.remove then os.remove(file(MAPWAIT)) end
+	if at and os.time() - at < 900 and TutorialPopup then TutorialPopup("coop_net_wait_host", true) end
 end
 
 local function num(v)

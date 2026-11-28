@@ -173,6 +173,7 @@ do
 		run(C.input, nil)
 		if C.netLog and not netOver then netOver = true; run(C.netWrite, "# mission over: victory") end
 		if C.netLog then run(C.netWrite, "won") end   -- host: the guest's game ends its battle too (netplay.c FollowVictory)
+		if C.netRole == "guest" then run(C.netMapWaitMark) end   -- the world map then says it waits for the host
 		if origVictory then return origVictory(...) end
 	end
 
@@ -183,6 +184,8 @@ do
 		if C.netLog then
 			run(C.netFix, netApi); run(netCutscene); run(netOverCheck); run(netCrew)
 			if not over then run(C.netWon, frameNo, { EndMissionInVictory = EndMissionInVictory }) end
+			run(C.netMove, frameNo, { SpawnEntity = SpawnEntity, DestroyEntity = DestroyEntity,
+				FindEntityWithName = FindEntityWithName, Vector = Vector })
 		else run(C.netClearStatus, RemoveCounter) end   -- a save from a network game keeps its status lines
 		run(function()
 			if busy() or not playerTurn() then return end

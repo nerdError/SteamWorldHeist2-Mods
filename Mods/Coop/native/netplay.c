@@ -341,8 +341,10 @@ typedef unsigned char (*CanSelect_t)(void *pts, int id);
 static CanSelect_t realCanSelect;
 #define RVA_CanSelect 0x45ac50
 
+static void *lastPts;   /* PlayerTurnSimulator, for the selected crewmate (the move target) */
 static unsigned char HookCanSelect(void *pts, int id)
 {
+    lastPts = pts;
     if (me && id && !Mine(id)) return 0;
     if (HELD()) return 0;
     return realCanSelect(pts, id);
@@ -1399,6 +1401,115 @@ static void HookPtsWait(void *pts)
     depth--;
 }
 
+/* ---- the other player's move target (2026-11-28, the user's wish after the aim) ----
+ * The tactics UI (0x5fe970) shows the tile under the pointer with 0x5f9de0(cursor, node, -, -) every frame while a
+ * crewmate is selected ([ui + 0x1b0] = hovered nav node, -1 none): node i is entry i (0x48 bytes) of the vector at
+ * [game + 0x1cc8] ([cursor] = game), its position (2 floats) at + 0x24. The own one goes to the other player as
+ * "move ao=<n> x=<x> y=<y>" (host: in its log; guest: "gmove ..." to the host, played at once, not logged) when the
+ * tile changes, "move ao=<n> off" 250 ms after the cursor is gone. The other game writes swh2_net_move.txt
+ * "<seq> <actor id> <owner> <x> <y>" / "<seq> off" — the mission Lua puts a marker with the owner's nick there
+ * (coop.lua C.netMove, entity coop_move_N) — while its world is quiet, and takes it down at any command of that actor. */
+typedef void (*CursorNode_t)(void *cursor, long long node, int a, int b);
+static CursorNode_t realCursorNode;
+#define RVA_CursorNode 0x5f9de0
+#define MOVE_SEND_MS 60
+#define MOVE_OFF_MS 250
+static int moveSentOrd = -1;
+static float moveSentX, moveSentY;
+static ULONGLONG moveSeenAt, moveSentAt;
+static wchar_t movePath[MAX_PATH];
+static struct { int id, shown, want; float x, y; } remoteMove = { -1, 0, 0, 0, 0 };
+
+static void MoveSend(const char *text)
+{
+    if (me == 1) { if (hosting) NetLog("move %s", text); }
+    else if (me == 2) { char line[128]; sprintf(line, "gmove %s", text); NetTcpSend(line); }
+}
+
+static void HookCursorNode(void *cursor, long long node, int a, int b)
+{
+    realCursorNode(cursor, node, a, b);
+    if (!me || !mainSim || !lastPts) return;
+    DWORD selected = ExeRva(RVA_PtsSelected);
+    int id;
+    float x, y;
+    __try
+    {
+        void *actor = selected ? ((PtsSelected_t)(base + selected))(lastPts) : NULL;
+        if (!actor) return;
+        id = ActorId(actor);
+        char *game = *(char **)cursor;
+        char *first = *(char **)(game + 0x1cc8), *last = *(char **)(game + 0x1cc8 + 8);
+        if (node < 0 || node >= (last - first) / 0x48) return;
+        x = *(float *)(first + node * 0x48 + 0x24);
+        y = *(float *)(first + node * 0x48 + 0x28);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    int ao = OrdinalOf(id);
+    if (ao < 0 || !Mine(id) || !(x == x) || !(y == y)) return;
+    ULONGLONG now = GetTickCount64();
+    moveSeenAt = now;
+    if (ao == moveSentOrd && x == moveSentX && y == moveSentY) return;
+    if (now - moveSentAt < MOVE_SEND_MS) return;
+    static int told;
+    if (!told) { told = 1; NetLog("# move target: first tile %lld at %.1f,%.1f (actor %d)", node, x, y, id); }
+    char text[96];
+    sprintf(text, "ao=%d x=%.1f y=%.1f", ao, x, y);
+    MoveSend(text);
+    moveSentOrd = ao; moveSentX = x; moveSentY = y; moveSentAt = now;
+}
+
+/* Every frame: the tile cursor is gone (moved, cancelled, aiming, another crewmate). */
+static void MoveWatch(void)
+{
+    if (moveSentOrd < 0 || GetTickCount64() - moveSeenAt < MOVE_OFF_MS) return;
+    char off[32];
+    sprintf(off, "ao=%d off", moveSentOrd);
+    MoveSend(off);
+    moveSentOrd = -1;
+}
+
+static void MoveMarkerFile(int on)
+{
+    static int markSeq;
+    FILE *f = _wfopen(movePath, L"w");
+    if (!f) return;
+    if (on) fprintf(f, "%d %d %d %.1f %.1f\n", ++markSeq, remoteMove.id, OwnerOf(remoteMove.id), remoteMove.x, remoteMove.y);
+    else fprintf(f, "%d off\n", ++markSeq);
+    fclose(f);
+}
+
+static void MoveFromLine(const char *p)
+{
+    int ao = -1;
+    float x, y;
+    if (sscanf(p, "ao=%d", &ao) != 1) return;
+    int id = IdOfOrdinal(ao, -1);
+    if (id < 0 || OwnerOf(id) == me) return;   /* ours: the other game shouldn't be moving it */
+    if (strstr(p, " off")) { if (remoteMove.id == id) remoteMove.want = 0; return; }
+    if (sscanf(p, "ao=%d x=%f y=%f", &ao, &x, &y) != 3) return;
+    if (remoteMove.shown && (remoteMove.id != id || remoteMove.x != x || remoteMove.y != y)) remoteMove.shown = 0;   /* moved: shown again below */
+    remoteMove.id = id; remoteMove.x = x; remoteMove.y = y; remoteMove.want = 1;
+}
+
+/* Every frame of the main world: the marker up only while the world is quiet and this game has played what came
+ * before (as the aim). */
+static void MoveDraw(void *sim)
+{
+    int quiet = !Busy(sim) && !(live && scriptPos < scriptLen);
+    int on = remoteMove.want && quiet && remoteMove.id >= 0;
+    if (on && !remoteMove.shown) { remoteMove.shown = 1; MoveMarkerFile(1); }
+    else if (!on && remoteMove.shown) { remoteMove.shown = 0; MoveMarkerFile(0); }
+}
+
+/* A command of this actor starts: its move target is over. */
+static void MoveDropFor(int id)
+{
+    if (remoteMove.id != id) return;
+    remoteMove.want = 0;
+    if (remoteMove.shown) { remoteMove.shown = 0; MoveMarkerFile(0); }
+}
+
 static void HookRequestAction(void *sim, void *actor, int index, const void *target, unsigned char flag)
 {
     int origin = replaying && depth == 0 ? ORIGIN_REPLAY : Origin(), mainPreview = 0;
@@ -1426,7 +1537,7 @@ static void HookRequestAction(void *sim, void *actor, int index, const void *tar
     if (len >= 0) Hex(hex, data, len); else strcpy(hex, "?");
     int id = ActorId(actor), ao = OrdinalOf(id), to = type == 2 && len == 4 ? OrdinalOf(*(int *)data) : -1;
     ActionName(actor, index, name, sizeof name);
-    if (depth == 0 && sim == mainSim) AimDropFor(sim, id);
+    if (depth == 0 && sim == mainSim) { AimDropFor(sim, id); MoveDropFor(id); }
 
     if (mode == NET_REPLAY && depth == 0 && origin == ORIGIN_PLAYER)
     {
@@ -1615,7 +1726,7 @@ typedef size_t (*TextFind_t)(void *map, const void *key);
 typedef void *(*OpNew_t)(size_t);
 
 static const char *const nameKeys[] = {
-    "coop_owner_1", "coop_owner_2",
+    "coop_owner_1", "coop_owner_2", "coop_move_1", "coop_move_2",
     "coop_net_host_waiting", "coop_net_host_connected", "coop_net_host_closed", "coop_net_host_failed", "coop_net_host_joining",
     "coop_net_guest_waiting", "coop_net_guest_connected", "coop_net_guest_closed", "coop_net_guest_failed",
     "coop_net_turn_both", "coop_net_turn_p1", "coop_net_turn_p2", "coop_net_turn_enemy",
@@ -1623,7 +1734,7 @@ static const char *const nameKeys[] = {
     "tutorial_coop_net_guest_lost", "tutorial_coop_net_guest_lost_page1", "tutorial_coop_net_host_left", "tutorial_coop_net_host_left_page1",
     "tutorial_coop_net_host_lost", "tutorial_coop_net_host_lost_page1",
     "coop_net_refused_cell", "coop_net_refused_gone", "coop_net_refused_notyours", "coop_net_refused_bad",
-    "tutorial_coop_net_version", "tutorial_coop_net_version_page1",
+    "tutorial_coop_net_version", "tutorial_coop_net_version_page1", "tutorial_coop_net_wait_host", "tutorial_coop_net_wait_host_page1",
 };
 
 /* The value std::string of a text key in the game's table (NULL: no table yet / no such key). */
@@ -1924,7 +2035,11 @@ static void HostPump(void *sim)
     static char line[2 * (MAX_VEC_BYTES + 8) + 128], next[sizeof line];
     static int have;
     if (!have) have = NetTcpPoll(line, sizeof line);
-    while (have && strncmp(line, "gaim ", 5) == 0) { AimFromLine(line + 5); have = NetTcpPoll(line, sizeof line); }   /* aim: now, not logged */
+    while (have && (strncmp(line, "gaim ", 5) == 0 || strncmp(line, "gmove ", 6) == 0))   /* aim, move target: now, not logged */
+    {
+        if (line[1] == 'a') AimFromLine(line + 5); else MoveFromLine(line + 6);
+        have = NetTcpPoll(line, sizeof line);
+    }
     if (!have) return;
     if (Busy(sim) || replaying) return;
     for (;;)
@@ -1932,7 +2047,11 @@ static void HostPump(void *sim)
         if (strcmp(line, "ready") != 0 && strcmp(line, "joined") != 0) NetLog("# from the guest: %.120s", line);   /* "ready" comes every few seconds */
         HostPlay(sim, line);
         have = NetTcpPoll(next, sizeof next);
-        while (have && strncmp(next, "gaim ", 5) == 0) { AimFromLine(next + 5); have = NetTcpPoll(next, sizeof next); }
+        while (have && (strncmp(next, "gaim ", 5) == 0 || strncmp(next, "gmove ", 6) == 0))
+        {
+            if (next[1] == 'a') AimFromLine(next + 5); else MoveFromLine(next + 6);
+            have = NetTcpPoll(next, sizeof next);
+        }
         if (!have) return;
         const char *f1 = strstr(line, " f="), *f2 = strstr(next, " f=");
         int chained = strncmp(line, "gcmd", 4) == 0 && strncmp(next, "gcmd", 4) == 0 && f1 && f2 && atoi(f1 + 3) == atoi(f2 + 3);
@@ -2257,7 +2376,7 @@ static ULONG_PTR HookSimUpdate(void *sim, void *arg)
         if (me) WatchOther();
         if (hosting) { HostPump(sim); TurnWatch(sim); }
         Pump(sim);
-        if (me && sim == mainSim) { AimWatch(); AimDraw(sim); }
+        if (me && sim == mainSim) { AimWatch(); AimDraw(sim); MoveWatch(); MoveDraw(sim); }
 
     }
     return realSimUpdate(sim, arg);
@@ -2573,6 +2692,8 @@ static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
     hostWon = -1;
     wonTold = 0;
     DeleteFileW(wonPath);
+    remoteMove.id = -1; remoteMove.want = remoteMove.shown = 0;
+    DeleteFileW(movePath);
     destsLen = 0;
     scenesMade++;
     if (hosting && saveAfterCheckpoint == 1) { saveAfterCheckpoint = 2; checkpointSceneAt = GetTickCount64(); }
@@ -2734,6 +2855,11 @@ static void ParseScriptLine(const char *line)
     if (strncmp(line, "aim ", 4) == 0)
     {
         if (live) AimFromLine(line + 4);   /* the host's aim (a file replay: ignored) */
+        return;
+    }
+    if (strncmp(line, "move ", 5) == 0)
+    {
+        if (live) MoveFromLine(line + 5);   /* the host's move target */
         return;
     }
     if (strncmp(line, "hostleft", 8) == 0)
@@ -3629,6 +3755,8 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     DeleteFileW(focusPath);
     _snwprintf(wonPath, MAX_PATH, L"%s\\swh2_net_won.txt", dir);
     DeleteFileW(wonPath);
+    _snwprintf(movePath, MAX_PATH, L"%s\\swh2_net_move.txt", dir);
+    DeleteFileW(movePath);
 
     if (hostPort > 0)
         NetLog(NetTcpHost(bindAddr, hostPort, outPath) ? "# host: guests connect to %s port %d" : "# ERROR: host on %s port %d not started",
@@ -3668,6 +3796,9 @@ void NetInstall(char *exeBase, const wchar_t *dir)
         static const unsigned char aimUpdate[] = { 0x48,0x8b,0xc4,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57 };
         AimResolve();
         realAimUpdate = atTraceMake ? (AimUpdate_t)InlineHook(RVA_AimUpdate, aimUpdate, sizeof aimUpdate, (void *)HookAimUpdate) : NULL;
+        static const unsigned char cursorNode[] = { 0x48,0x8b,0xc4,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0xa8,0x38,0xff,0xff,0xff };
+        realCursorNode = (CursorNode_t)InlineHook(RVA_CursorNode, cursorNode, sizeof cursorNode, (void *)HookCursorNode);
+        if (!realCursorNode) NetLog("# ERROR: %s: tile cursor hook not installed: the players don't see where the other one moves", me == 1 ? "host" : "guest");
         if (!realAimUpdate) { atTraceMake = NULL; NetLog("# ERROR: %s: aim hook not installed: the players don't see each other aim", me == 1 ? "host" : "guest"); }
         static const unsigned char quit[] = { 0x4c,0x8b,0xdc,0x53,0x48,0x83,0xec,0x50,0x49,0xc7,0x43,0xd8,0xfe,0xff,0xff,0xff };
         realQuit = (Quit_t)InlineHook(RVA_Quit, quit, sizeof quit, (void *)HookQuit);
