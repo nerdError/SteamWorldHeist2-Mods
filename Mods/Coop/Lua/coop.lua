@@ -364,7 +364,9 @@ function C.netFocus(frameNo, E)
 			F.panUntil = frameNo + 60
 		end
 	end
-	return F.panUntil ~= nil and frameNo < F.panUntil
+	-- Following counts too: SetCameraTargetEntity keeps IsCameraSequenceActive true until ClearCameraTarget — the guest
+	-- took it for a mission cutscene and replayed nothing more (2026-11-28, laptop test 4: the host's Wait never came).
+	return F.following ~= nil or (F.panUntil ~= nil and frameNo < F.panUntil)
 end
 
 -- Name tags: the owner's name over every crewmate all the time, in the owner's colour (entities.worldtexts.xml
@@ -390,7 +392,7 @@ function C.netCutscene(on, why)
 	cutscene = on
 	C.netWrite("# cutscene " .. (on and "on" or "off") .. (why and (" (" .. why .. ")") or ""))
 	local f = io.open(file(CUTSCENE), "w")
-	if f then f:write(on and "1" or "0", "\n"); f:close() end
+	if f then f:write(on and ("1 " .. (why or "")) or "0", "\n"); f:close() end
 end
 
 local function num(v)

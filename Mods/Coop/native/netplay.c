@@ -403,14 +403,27 @@ static int cutsceneOn, quietFrames;
 #define LIVE_CUTSCENE_QUIET 20
 static int live;
 
+/* A live guest held by a camera sequence (not a dialogue: commands in one leave an empty dialogue box) for longer than
+ * this goes on: a camera that never ended (our own follow, SetCameraTargetEntity, read as one) held the replay for good
+ * while the host played on (2026-11-28, laptop test 4). */
+#define LIVE_CAMERA_MAX 480
 static int CutsceneHold(void)
 {
+    static int cameraOn, cameraFrames, cameraToldAt = -1;
     if (frame % 10 == 0)
     {
         FILE *f = _wfopen(cutscenePath, L"r");
-        cutsceneOn = f && fgetc(f) == '1';
-        if (f) fclose(f);
+        char s[16] = "";
+        if (f) { if (!fgets(s, sizeof s, f)) s[0] = 0; fclose(f); }
+        cutsceneOn = s[0] == '1';
+        cameraOn = cutsceneOn && strncmp(s + 1, " camera", 7) == 0;
     }
+    if (cameraOn && live && guest && scriptPos < scriptLen && ++cameraFrames > LIVE_CAMERA_MAX)
+    {
+        if (cameraToldAt != scriptPos) { cameraToldAt = scriptPos; NetLog("# DIFF: a camera sequence held replay %d for %d frames: going on", scriptPos + 1, LIVE_CAMERA_MAX); }
+        return 0;
+    }
+    if (!cameraOn) cameraFrames = 0;
     if (cutsceneOn) { quietFrames = 0; return 1; }
     return ++quietFrames < (live ? LIVE_CUTSCENE_QUIET : CUTSCENE_QUIET);
 }
