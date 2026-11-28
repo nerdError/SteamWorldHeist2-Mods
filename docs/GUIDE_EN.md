@@ -133,7 +133,7 @@ Co-op (network) — mod Coop, experimental
     the guest's game, it takes the host's save into its slot by itself (the old one goes to a save bank).
   - Otherwise: forward the TCP port (27015) to the host's PC, or use a virtual LAN (Radmin VPN, ZeroTier,
     Tailscale). The network game is for that one start of the game; a normal start plays alone.
-  - Easiest: the host goes into the battle first, then the guest joins and clicks Continue — it lands in the same
+  - Easiest: the host goes into the battle first, then the guest joins; its game loads the host's save by itself (no Continue to click) and lands in the same
     battle. The host can't move until the guest is in. Next mission: the guest restarts and joins again.
   - Both need the same mods with the same settings: the guest's loader checks this with the host's game and
     doesn't start if they differ (it says what differs). A broken connection comes back by itself; the guest's game goes on.

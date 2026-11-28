@@ -41,7 +41,7 @@ PCs: a Co-op you built yourself from other sources counts as another version. Th
 address for next time.
 
 **The host goes into the battle first**, the guest joins once the host is in it: the guest's loader gets the host's
-save from inside the battle, the guest clicks Continue and lands in the same battle — same crew, same gear, nothing
+save from inside the battle, the guest's game loads it by itself (no Continue to click) and lands in the same battle — same crew, same gear, nothing
 to pick. Until the guest's game is in the battle the host can't move (the screen says who it waits for). Next
 mission: the guest closes the game and joins again (Network game… → Start the game) once the host is in it.
 

@@ -196,6 +196,7 @@ static void Notify(const char *name, int actor)
  * is back ("ready" from its battle again), and a new battle doesn't wait for it. */
 static int guestAway;
 static int userLeft;   /* guest: its player quit the battle (HookQuit): no Continue pressed by itself */
+static int loaderSlot;   /* guest: the loader put the host's save into slot guestSlotPath (session "slot"): Continue at start */
 static ULONGLONG hostLeftAt;   /* live guest: when the host's "hostleft" line came (0 = not) */
 
 static int HasPoints(void *actor)
@@ -3204,6 +3205,15 @@ static ULONG_PTR HookMenuUpdate(void *menu, void *dt)
         free(nextSave);
         nextSave = NULL;
     }
+    /* Game start of a guest whose loader put the host's save into its slot: Continue on that slot by itself, as for
+     * the next battles (the menu's update, not its entry: LoadingGame there gave a black screen, EXE_NOTES). */
+    static int startContinued;
+    if (loaderSlot && !startContinued && !worldTick && flag && base[flag] && now - menuSince > 1000)
+    {
+        startContinued = 1;
+        continueAt = now + 1500;
+        NetLog("# main menu: game start with the host's save in slot %d: Continue by itself", GuestSlotIndex() + 1);
+    }
     if (continueAt && now >= continueAt)
     {
         continueAt = 0;
@@ -3629,7 +3639,7 @@ static int ReadSession(const wchar_t *dir, char *word, char *net, char *arg)
         if (strncmp(line, "save ", 5) == 0) { SetSharedSave(line + 5); continue; }
         if (strncmp(line, "info ", 5) == 0) { NetTcpSetInfo(line + 5); strncpy(sessionInfo, line + 5, sizeof sessionInfo - 1); continue; }
         if (strncmp(line, "from ", 5) == 0) { SetFrom(line + 5); continue; }
-        if (strncmp(line, "slot ", 5) == 0) { MultiByteToWideChar(CP_UTF8, 0, line + 5, -1, guestSlotPath, MAX_PATH); continue; }
+        if (strncmp(line, "slot ", 5) == 0) { MultiByteToWideChar(CP_UTF8, 0, line + 5, -1, guestSlotPath, MAX_PATH); loaderSlot = 1; continue; }
         if (strcmp(line, "steam host") == 0) { steamMode = 1; continue; }
         if (strncmp(line, "steam join ", 11) == 0) { steamMode = 2; steamId = _strtoui64(line + 11, NULL, 10); continue; }
         if (sscanf(line, "%15s %127s", what, value) != 2) continue;

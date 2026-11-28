@@ -155,8 +155,8 @@ public static class NetSession
                 sb.AppendLine($"Got the host's save ({hostFile}, {data.Length / 1024} KB) and put it into your slot {p.GuestSlot + 1}" +
                               (kept != null ? $"; what was there is kept as save bank \"{kept.Name}\" (Save banks… in the loader)." : "."));
                 sb.AppendLine(got.InBattle
-                    ? $"The host is in a battle: in the game, Continue / load slot {p.GuestSlot + 1} — you land in the host's battle."
-                    : $"In the game: Continue / load slot {p.GuestSlot + 1}, then enter the mission the host enters.");
+                    ? $"The host is in a battle: the game loads slot {p.GuestSlot + 1} by itself — you land in the host's battle."
+                    : $"The game loads slot {p.GuestSlot + 1} by itself; then enter the mission the host enters.");
             }
         }
         lines.Add($"name {name}");
