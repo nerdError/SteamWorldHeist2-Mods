@@ -44,6 +44,25 @@ static int ReadAll(const wchar_t *path, char *out, int max)
     return n;
 }
 
+/* Remote aim: fakes of the game's sight line functions, counting calls. */
+static int traceMakes, traceAims, ptrResets, animOn, animOff, lastValid;
+static char fakeTrace[16], fakeBody[16], fakeAnim[16], fakeWeapon[16], fakeAction[16];
+static ULONG_PTR fakeMapEnd = 99, fakeIdx[40 / sizeof(ULONG_PTR) + 8];
+static void *fakeDefs[4];
+static void *FakeStore(void *components) { (void)components; return fakeBody; }
+static void *FakeComponent(void *storage, int id) { (void)storage; (void)id; return fakeAnim; }
+static void *FakeWeaponDef(void *unused, void *name) { (void)unused; (void)name; return fakeWeapon; }
+static ULONG_PTR FakeMapFind(void *map, void *view) { (void)map; return ((View *)view)->n == 5 ? 0 : 99; }
+static void *FakeTraceMake(void *body, void *actor, void *weapon, void *action, float a)
+{ (void)body; (void)a; traceMakes += weapon == fakeWeapon && action == fakeAction; *(void **)((char *)actor + 0xf8) = fakeTrace; return fakeTrace; }
+static void FakeTraceAim(void *body, void *actor, void *trace, float a, unsigned char valid)
+{ (void)body; (void)actor; (void)a; traceAims += trace == fakeTrace; lastValid = valid; }
+static void FakePtrReset(void *p) { ptrResets++; *(void **)p = NULL; }
+static void FakeAnimInput(void *unused, void *anim, void *view, unsigned char on)
+{ (void)unused; (void)anim; if (((View *)view)->n == 3) { if (on) animOn++; else animOff++; } }
+static unsigned char FakeIdle(void *sim) { (void)sim; return 0; }
+static void FakeAimUpdate(void *ui, float *dt, void *state) { (void)ui; (void)dt; (void)state; }
+
 static int LastLine(char *line, int max)
 {
     FILE *f = _wfopen(outPath, L"r");
@@ -137,7 +156,7 @@ int main(void)
     CHECK(*counter == 1);
     char line[512];
     CHECK(LastLine(line, sizeof line));
-    static const char expected[] = "cmd 1 o=other a=77 ao=-1 i=1 n=Shoot_Long_Name_X t=3:0000c03f to=-1 fl=0 r=12345678:9abcdef0 e=-1 d=0 f=0 pv=0 bt=";
+    static const char expected[] = "cmd 1 o=other a=77 ao=-1 i=1 n=Shoot_Long_Name_X t=3:0000c03f to=-1 fl=0 r=12345678:9abcdef0 e=-1 d=0 f=0 w=0 pv=0 bt=";
     CHECK(strncmp(line, expected, sizeof expected - 1) == 0);   /* unknown origin: return addresses follow */
 
     /* The line parses back to the same command. */
@@ -199,6 +218,15 @@ int main(void)
 
     CHECK(NetParseLine("end 5 o=player f=10\n", e) == ORIGIN_PLAYER && e->kind == 'e' && e->ent == -1 && e->z == 0);
     CHECK(NetParseLine("end 6 o=other r=0000000a:0000000b e=208 f=10\n", e) == ORIGIN_OTHER && e->z == 10 && e->w == 11 && e->ent == 208);
+    CHECK(e->step == -1);   /* no w= (older records): the world is not held for it */
+    /* World steps (lockstep): w= on commands and turn ends, "k <steps>" lines between them. */
+    CHECK(NetParseLine("end 8 o=other r=0000000a:0000000b e=208 f=10 w=123456789012 by=guest\n", e) == ORIGIN_OTHER && e->w == 11 && e->step == 123456789012LL);
+    CHECK(NetParseLine("cmd 9 o=player a=41 ao=0 i=4 n=shoot t=3:85857c3e to=-1 fl=0 r=1:2 e=300 d=0 f=5 w=4321 pv=0\n", e) == ORIGIN_PLAYER && e->step == 4321 && e->w == 2 && e->frame == 5);
+    hostSteps = hostStepsFirst = -1;
+    ParseScriptLine("k 600\n");
+    ParseScriptLine("k 606\n");
+    CHECK(hostSteps == 606 && hostStepsFirst == 600);
+    hostSteps = hostStepsFirst = -1;
     CHECK(NetParseLine("cmd 7 o=replay a=41 i=4 n=shoot t=3:85857c3e fl=0 r=1:2 e=300 d=1 f=1 pv=0 bt=38c2c0,x,\n", e) == ORIGIN_REPLAY);
     CHECK(e->depth == 1 && e->ent == 300 && e->dataLen == 4 && e->frame == 1);
 
@@ -350,6 +378,96 @@ int main(void)
         ReadMore();
         CHECK(scriptLen == 2 && script[1].kind == 'e' && script[1].origin == ORIGIN_OTHER);
         DeleteFileW(replayPath);
+    }
+
+    {
+        /* The other player's aim: lines -> angles, "aim" animation input and the sight line, taken down by "off" and
+         * by a command of that actor; the own aim -> "aim" lines in the host's log. */
+        static char nodeBuf[2][0x400];   /* [0] sentinel; [1] actor 41 at +0x18 */
+        static int id41 = 41;
+        *(void **)nodeBuf[0] = nodeBuf[1];
+        *(void **)nodeBuf[1] = nodeBuf[0];
+        char *actor41 = nodeBuf[1] + 0x18;
+        *(int **)actor41 = &id41;
+        static unsigned char acts[2 * 0x38];
+        memcpy(acts + 0x38, "shoot", 6);
+        *(size_t *)(acts + 0x38 + 0x10) = 5;
+        *(size_t *)(acts + 0x38 + 0x18) = 15;
+        *(unsigned char **)(actor41 + 0x50) = acts;
+        *(unsigned char **)(actor41 + 0x58) = acts + sizeof acts;
+        static char storage[0x100], aimWorld[0x2000];
+        *(void **)(storage + 0xd0) = nodeBuf[0];
+        atActorStorage = (char *)FakeStorage;
+        fakeStorage = storage;
+        void *sim3[4] = { NULL, NULL, aimWorld, NULL };
+        atIsActionsOngoing = (char *)FakeIdle;
+        atActorStore = atBodyStore = atAnimStore = (char *)FakeStore;
+        atComponent = (char *)FakeComponent;
+        atWeaponDef = (char *)FakeWeaponDef;
+        atMapFind = (char *)FakeMapFind;
+        atTraceMake = (char *)FakeTraceMake;
+        atTraceAim = (char *)FakeTraceAim;
+        atPtrReset = (char *)FakePtrReset;
+        atAnimInput = (char *)FakeAnimInput;
+        static ULONG_PTR *mapEndPtr = &fakeMapEnd;
+        static ULONG_PTR *idxPtr = fakeIdx;
+        static void **defsPtr = fakeDefs;
+        atActionMapEnd = (char *)mapEndPtr;
+        atActionMapIdx = (char *)&idxPtr;
+        atActionDefs = (char *)&defsPtr;
+        *(int *)((char *)fakeIdx + 0x20) = 0;   /* "shoot": map entry 0 -> value 0 -> defs[0] */
+        fakeDefs[0] = fakeAction;
+        ordLen = 0; ordIds[ordLen++] = 41; ordIds[ordLen++] = 190;
+        crewLen = 2; crewIds[0] = 41; crewIds[1] = 190;   /* 41 the host's, 190 the guest's */
+        me = 2; live = 1; scriptPos = scriptLen = 0;
+        AimFromLine("ao=1 i=1 a=0.5 b=0.25 s=1 v=1");   /* the guest's own: ignored */
+        AimFromLine("ao=0 i=1 a=0.5 b=0.25 s=1 v=0");
+        AimDraw(sim3);
+        CHECK(*(float *)(actor41 + 0xe0) == 0.5f && *(float *)(actor41 + 0xe4) == 0.25f);
+        CHECK(traceMakes == 1 && traceAims == 1 && lastValid == 0 && animOn == 1);
+        AimDraw(sim3);
+        CHECK(traceMakes == 1 && traceAims == 1);   /* same angle: nothing to do */
+        AimFromLine("ao=0 i=1 a=0.75 b=0.25 s=1 v=1");
+        AimDraw(sim3);
+        CHECK(*(float *)(actor41 + 0xe0) == 0.75f && traceMakes == 2 && traceAims == 2 && lastValid == 1 && animOn == 1);   /* the game gives back the line it has */
+        scriptLen = 1;   /* the host's earlier commands not played yet: not shown meanwhile */
+        AimDraw(sim3);
+        CHECK(ptrResets == 1 && animOff == 1 && *(void **)(actor41 + 0xf8) == NULL);
+        scriptLen = 0;
+        AimDraw(sim3);
+        CHECK(traceMakes == 3 && animOn == 2);
+        AimFromLine("ao=0 off");
+        AimDraw(sim3);
+        CHECK(ptrResets == 2 && animOff == 2);
+        AimFromLine("ao=0 i=1 a=0.5 b=0.5 s=1 v=1");
+        AimDraw(sim3);
+        AimDropFor(sim3, 41);   /* its shot starts */
+        CHECK(ptrResets == 3 && animOff == 3);
+        AimDraw(sim3);
+        CHECK(traceMakes == 4);   /* not again until a new aim line */
+
+        /* Own aim as the host: one line per change (at most ~15 a second), "off" after the aim mode is gone. */
+        me = 1; hosting = 1; live = 0;
+        mainSim = sim3;
+        realAimUpdate = FakeAimUpdate;
+        static char ui[0x200], state[0x100];
+        *(int *)(ui + 0xfc) = 41;
+        *(int *)(ui + 0x100) = 1;
+        state[0xc8] = 1; state[0x6d] = 1;
+        *(float *)(actor41 + 0xe0) = 1.25f; *(float *)(actor41 + 0xe4) = 1.0f;
+        HookAimUpdate(ui, NULL, state);
+        char aimLine[256];
+        CHECK(LastLine(aimLine, sizeof aimLine) && strcmp(aimLine, "aim ao=0 i=1 a=1.25000 b=1.00000 s=1 v=1\n") == 0);
+        aimSeenAt = GetTickCount64() - AIM_OFF_MS - 1;
+        AimWatch();
+        CHECK(LastLine(aimLine, sizeof aimLine) && strcmp(aimLine, "aim ao=0 off\n") == 0 && aimSentOrd == -1);
+        *(int *)(ui + 0xfc) = 190;   /* the guest's crewmate: not the host's to aim */
+        HookAimUpdate(ui, NULL, state);
+        CHECK(aimSentOrd == -1);
+        ParseScriptLine("aim ao=0 i=1 a=0.5 b=0.5 s=1 v=1\n");   /* not live: ignored, not a command */
+        CHECK(scriptLen == 0);
+        me = 0; hosting = 0; crewLen = 0; ordLen = 0; mainSim = NULL;
+        memset(aims, 0, sizeof aims);
     }
 
     free(e);

@@ -26,6 +26,13 @@
 #include <string.h>
 #include "netplay.h"
 
+/* Source id (build.cmd: hash of the sources): the loaders of host and guest compare it (NetSession.DllId). The dll
+ * bytes themselves differ between PCs built from the same sources (another compiler version). */
+#ifndef SWH2COOP_SRC
+#define SWH2COOP_SRC "unknown"
+#endif
+__declspec(dllexport) const char Swh2CoopSource[] = "SWH2COOP_SRC=" SWH2COOP_SRC;
+
 /* RVAs of the import address table slots in the Steam exe (SHA-256 F1C07F03...); ExeRva translates them for GOG. */
 #define IAT_GetMouseState 0xb47800
 #define IAT_ControllerGetAxis 0xb47830

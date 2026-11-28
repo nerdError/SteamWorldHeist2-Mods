@@ -46,7 +46,7 @@
 #include "netplay.h"
 #pragma comment(lib, "ws2_32.lib")
 
-#define POLL_MS 15
+#define POLL_MS 5
 #define CHUNK 65536
 
 typedef struct { int port; char addr[128]; wchar_t path[MAX_PATH]; } TcpJob;

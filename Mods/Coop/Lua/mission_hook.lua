@@ -40,6 +40,7 @@ do
 	end
 
 	local function label(actor, persona)
+		if C.labelAlways then return end   -- the name tags are there all the time
 		local owner = C.owner(persona)
 		if owner then SpawnWorldText(actor, "worldtext_speak_important", "coop_owner_" .. owner) end
 	end
@@ -110,13 +111,21 @@ do
 		if not netBusy then return end
 		netBusy = false
 		local list = {}
-		for _, a in ipairs(GetAllActors() or {}) do list[#list + 1] = { a, GetEntityPosition(a), GetActorHealth(a) } end
+		for _, a in ipairs(GetAllActors() or {}) do list[#list + 1] = { a, GetEntityPosition(a), GetActorHealth(a), GetEntityDirection(a) } end
 		C.netState(list)
 	end
 
+	local function actorById(id)
+		if not id then return nil end
+		for _, a in ipairs(GetAllActors() or {}) do if tonumber(tostring(a)) == id then return a end end
+		return nil
+	end
+
 	local netApi = { IsActionsOngoing = IsActionsOngoing, GetAllActors = GetAllActors, GetEntityPosition = GetEntityPosition,
+		GetEntityDirection = GetEntityDirection, SetEntityDirection = SetEntityDirection,
 		SetEntityPosition = SetEntityPosition, GetActorHealth = GetActorHealth, SetActorHealth = SetActorHealth,
-		KillObject = KillObject, Vector = Vector }
+		KillObject = KillObject, Vector = Vector, CameraPanToEntity = CameraPanToEntity,
+		SetCameraTargetEntity = SetCameraTargetEntity, ClearCameraTarget = ClearCameraTarget, actorById = actorById }
 
 	-- Netplay test: dialogue for the autopilot (it clicks through while this says so).
 	local convoAt, frameNo = nil, 0
@@ -139,7 +148,9 @@ do
 
 	local function netCutscene()
 		frameNo = frameNo + 1
-		local camera = IsCameraSequenceActive()
+		-- A pan of our own to the other player's action is no mission cutscene (the replay would wait for it).
+		local ourPan = C.netFocus(frameNo, netApi)
+		local camera = IsCameraSequenceActive() and not ourPan
 		local convo = convoAt ~= nil and frameNo - convoAt < 120
 		C.netCutscene(camera or convo, camera and "camera" or (convo and "conversation" or nil))
 	end
@@ -147,11 +158,14 @@ do
 	-- Netplay: the crew for the owner split and the HUD status, twice a second.
 	local function netCrew()
 		if frameNo % 30 ~= 0 then return end
-		local list = {}
-		for _, c in ipairs(crew()) do list[#list + 1] = { id = tonumber(tostring(c.actor)), persona = c.persona } end
+		local list, all = {}, crew()
+		for _, c in ipairs(all) do list[#list + 1] = { id = tonumber(tostring(c.actor)), persona = c.persona } end
 		C.netCrew(list)
-		C.netStatus({ AddManualCounter = AddManualCounter, RemoveCounter = RemoveCounter, player = playerTurn() })
+		C.netStatus({ AddManualCounter = AddManualCounter, RemoveCounter = RemoveCounter, player = playerTurn(),
+			SpawnWorldText = SpawnWorldText, TutorialPopup = TutorialPopup, actorById = actorById })
+		if C.labelAlways and C.netRole and not over then C.netTags(all, frameNo, { SpawnWorldText = SpawnWorldText }) end
 	end
+
 
 	local origVictory = OnMissionVictory
 	function OnMissionVictory(...)

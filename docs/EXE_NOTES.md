@@ -179,6 +179,7 @@
   вызова: игрок, ИИ, Lua; `Target` = `std::variant` из 6 простых типов — MULTIPLAYER.md, «Команда»), выполнение
   `0x391e30` (событие ActionStarted + «Pre-simulating outcome»), обновление очереди `0x3896d0` из `0x480a10`.
 - `PlayerTurnSimulator` (`playerturnsimulator.cpp`, `0x455eb0`…): выбор бота/действия, подтверждение по типу цели `0x458780`.
+- Прицел: режим `TacticsTargetUI` `0x608da0` (каждый кадр), угол `actor+0xe0/+0xe4`, линия прицела `actor+0xf8` (`0x376e30`/`0x377290`) — MULTIPLAYER.md, «Прицел другого игрока».
 - ИИ: исполнитель приказов `0x43be40`. `OutcomeSimulator` (`outcomesimulator.cpp`): `0x455060` крутит `0x480a10`
   с фиксированным шагом `System.UpdatesPerSecond` (1/60) на копии состояния.
 - ГСЧ — MWC Марсальи, один на игру: `[0xea1b98]` → `{z, w}`, засев от времени при запуске (`0x7e11a0`).

@@ -29,8 +29,10 @@ virtual LAN (Radmin VPN, ZeroTier, Tailscale) and use its address. Windows asks 
 use the network — allow it.
 
 Before anything else the guest's loader checks with the host's game that both have the same Co-op version and the
-same game data (same mods with the same settings — Randomizer: the same seed). If not, it doesn't start and lists
-both mod sets.
+same game data (same mods with the same settings — Randomizer: the same seed). If not, it doesn't start and says
+what differs (the Co-op dll's source version, which game file, both mod sets). Copy the same mod pack build to both
+PCs: a Co-op you built yourself from other sources counts as another version. The window keeps your nickname, mode and
+address for next time.
 
 **The host goes into the battle first**, the guest joins once the host is in it: the guest's loader gets the host's
 save from inside the battle, the guest clicks Continue and lands in the same battle — same crew, same gear, nothing
@@ -49,6 +51,16 @@ For playing over **Parsec** on one copy of the game (friends without the game) u
 Logs (`%APPDATA%\Thunderful\SteamWorld Heist II\`): `swh2_net_record.log` (host), `swh2_net_replayed.log` (guest),
 `swh2_coop.log`. Developer tests: **Network game… → Developer tests…** or `swh2 nettest` (see `docs/MULTIPLAYER.md`
 in the source repository).
+
+In the battle: the owner's name hangs over every crewmate in the owner's colour (setting "Name tags"). When your
+crew is done for the turn, the camera goes to the other player's actions (and to the enemies' on the guest). A move
+into a cell the other player's crewmate is already going to is refused (the reason shows over your crewmate). One
+player leaving the battle or losing the connection is shown in the game's popup window: the host then controls the
+guest's crewmates until the guest is back; the guest goes to the main menu and joins the host's next battle by itself.
+A guest that joins inside the battle fast-forwards through what the host did meanwhile. While the other player
+aims, you see it: their crewmate raises the weapon and shows the sight line (with the same weapon and aim as theirs).
+The guest's battle runs in step with the host's (the same time passes between two moves, animations included), so a
+shot ends the same in both games; while the host's battle is paused, the guest's waits too.
 
 Not done yet: more than 2 players, Steam invites (instead of an IP address).
 
@@ -83,7 +95,9 @@ Not done yet: more than 2 players, Steam invites (instead of an IP address).
 игре в сеть, — разрешите.
 
 Сначала загрузчик гостя сверяется с игрой хоста: одна ли версия Co-op и одинаковые ли данные игры (те же моды с теми
-же настройками; Randomizer — тот же сид). Если нет — игра не запускается, а в окне видны наборы модов обоих.
+же настройками; Randomizer — тот же сид). Если нет — игра не запускается, а окно пишет, что именно отличается
+(версия исходников dll Co-op, какой файл игры, наборы модов обоих). Ставьте на оба ПК одну и ту же сборку мод-пака:
+Co-op, собранный из других исходников, считается другой версией. Ник, режим и адрес окно запоминает.
 
 **Хост входит в бой первым**, гость подключается, когда хост уже в нём: загрузчик гостя забирает сейв хоста прямо из
 боя, гость жмёт «Продолжить» и оказывается в том же бою — та же команда, то же снаряжение, ничего выбирать не надо.
@@ -101,5 +115,14 @@ Not done yet: more than 2 players, Steam invites (instead of an IP address).
 Логи (`%APPDATA%\Thunderful\SteamWorld Heist II\`): `swh2_net_record.log` (хост), `swh2_net_replayed.log` (гость),
 `swh2_coop.log`. Тесты разработчика: **Network game… → Developer tests…** или `swh2 nettest` (см. `docs/MULTIPLAYER.md`
 в репозитории).
+
+В бою: над каждым бойцом всё время висит имя владельца его цветом (настройка «Name tags»). Когда твоя команда
+уже походила, камера показывает действия другого игрока (а у гостя — и врагов). Ход в клетку, куда уже идёт боец
+другого игрока, отклоняется (причина — над твоим бойцом). Выход игрока из боя или потеря связи показываются окном
+игры: хост управляет бойцами гостя, пока тот не вернётся; гость выходит в главное меню и сам входит в следующий бой
+хоста. Гость, вошедший посреди боя, проматывает сделанное хостом ускоренно. Когда другой игрок целится, это видно: его
+боец поднимает оружие и показывает линию прицела (как у него самого).
+Бой гостя идёт в ногу с боем хоста (между ходами проходит столько же времени, анимации тоже), поэтому выстрел кончается
+одинаково в обеих играх; пока бой хоста на паузе, бой гостя ждёт.
 
 Пока нет: больше 2 игроков, приглашений через Steam (вместо IP-адреса).

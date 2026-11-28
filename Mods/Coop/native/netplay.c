@@ -42,7 +42,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+#include <limits.h>
+#include <intrin.h>
 #include "netplay.h"
+#pragma intrinsic(_ReturnAddress)
 
 /* Steam-build RVAs (ExeRva translates them for GOG). */
 #define RVA_RequestAction 0x38b9b0
@@ -80,7 +84,7 @@ static int replaying;   /* our own call into the game is in progress */
  * swh2_net_record.log with o=player — a fresh record from an old one with no one at the keyboard. */
 static int autoplay;
 static int guest;        /* replay, not autoplay: AI off, everything from the record */
-static int live;         /* guest over the network (nettcp.c): the replay file grows while the battle runs */
+/* live (guest over the network, nettcp.c: the replay file grows while the battle runs) is declared further down. */
 static int earlyEnds;    /* live: turn ends the game gave before the host's line for them arrived */
 static void ReadMore(void);
 static int replayAs = -1;   /* origin of the recorded entry being issued (logged instead of "replay"; -1 = player) */
@@ -110,7 +114,7 @@ static int guestWait;   /* autoplay host: frames waited for the guest's command 
  * autoplay script waits) until the guest's game says "ready" from its own mission world — so the host can't play
  * ahead while the guest still loads or watches the intro. The guest says it on every connect (reconnects too). */
 static int guestIn;
-#define HELD() (hosting && !guestIn)
+#define HELD() (hosting && !guestIn && !guestAway)
 static int joinedMid;      /* guest: its save is from inside the host's mission (session "from"): no scene line comes */
 static int readySentFor;   /* guest: the connect (NetTcpReconnects() + 1) "ready" was sent on */
 static int ordSeeded;      /* guest, joinedMid: the host's ordinals are in (once per joined battle) */
@@ -165,9 +169,31 @@ static void ReadCrew(void)
 }
 
 /* Network status for the mission Lua's HUD (coop.lua C.netStatus), twice a second:
- *   <host|guest> <waiting|connected|closed|failed> <host's crewmates with action points> <guest's ...> */
+ *   <host|guest> <waiting|connected|closed|failed> <host's crewmates with action points> <guest's ...>
+ *   <event seq> <event name> <event actor id> <the other player's crewmate the camera follows when ours are done, -1>
+ *   <this player's first crewmate with action points, -1> (the camera goes there when the crew's turn starts)
+ * The event is the last notification (Notify); the Lua shows it when its number changes (not the one already there
+ * when the battle starts): the game's popup window (tutorials_popup.xml coop_net_<name>) for a player who left, came
+ * back or lost the connection, a text over the crewmate for a refused command (coop_net_<name>). */
 static wchar_t statusPath[MAX_PATH];
 static void *FindActor(void *sim, int id);
+static int eventSeq, eventActor;
+static int otherActive = -1;   /* the other player's crewmate that acted last (the camera follows it: coop.lua C.netFocus) */
+static char eventName[32] = "-";
+
+static void Notify(const char *name, int actor)
+{
+    eventSeq++;
+    strncpy(eventName, name, sizeof eventName - 1);
+    eventActor = actor;
+    NetLog("# notify %d: %s %d", eventSeq, name, actor);
+}
+
+/* Host: the guest left the battle (quit to the menu, or the connection is gone): its crewmates are the host's until it
+ * is back ("ready" from its battle again), and a new battle doesn't wait for it. */
+static int guestAway;
+static int userLeft;   /* guest: its player quit the battle (HookQuit): no Continue pressed by itself */
+static ULONGLONG hostLeftAt;   /* live guest: when the host's "hostleft" line came (0 = not) */
 
 static int HasPoints(void *actor)
 {
@@ -178,11 +204,16 @@ static int HasPoints(void *actor)
 static void WriteStatus(void *sim)
 {
     static const char *states[] = { "waiting", "waiting", "connected", "closed", "failed" };
-    int left[3] = { 0, 0, 0 }, st = NetTcpState();
+    int left[3] = { 0, 0, 0 }, st = NetTcpState(), follow = -1, own = -1;
     for (int i = 0; i < crewLen; i++)
     {
         void *a = FindActor(sim, crewIds[i]);
-        if (a && HasPoints(a)) left[i % 2 == 0 ? 1 : 2]++;
+        if (a && HasPoints(a))
+        {
+            left[i % 2 == 0 ? 1 : 2]++;
+            if ((i % 2 == 0 ? 1 : 2) != me && (follow < 0 || crewIds[i] == otherActive)) follow = crewIds[i];
+            if ((i % 2 == 0 ? 1 : 2) == me && own < 0) own = crewIds[i];
+        }
     }
     static int reconnectsSeen;
     if (me == 2 && NetTcpReconnects() != reconnectsSeen)
@@ -194,7 +225,7 @@ static void WriteStatus(void *sim)
     if (!f) return;
     /* host, guest connected but not in the battle yet: "joining" (the host's battle is held) */
     const char *word = me == 1 && st == NET_TCP_CONNECTED && !guestIn ? "joining" : st >= 0 && st <= 4 ? states[st] : "waiting";
-    fprintf(f, "%s %s %d %d\n", me == 1 ? "host" : "guest", word, left[1], left[2]);
+    fprintf(f, "%s %s %d %d %d %s %d %d %d\n", me == 1 ? "host" : "guest", word, left[1], left[2], eventSeq, eventName, eventActor, follow, own);
     fclose(f);
 }
 
@@ -209,8 +240,20 @@ static int OwnerOf(int id)
 static int Mine(int id)
 {
     int o = OwnerOf(id);
-    return !me || !o || o == me;
+    return !me || !o || o == me || (me == 1 && guestAway);
 }
+
+/* Camera to an actor of the other game: the mission Lua pans to it (coop.lua C.netFocus). "<seq> <actor id>". */
+static wchar_t focusPath[MAX_PATH];
+static void FocusOn(int id)
+{
+    static int focusSeq;
+    FILE *f = _wfopen(focusPath, L"w");
+    if (!f) return;
+    fprintf(f, "%d %d\n", ++focusSeq, id);
+    fclose(f);
+}
+
 
 /* ---- party slots: owner colour + name on the crew portraits (tactics HUD) ----
  * Slot update 0x5fa900(slot, int, const std::string *persona) fills a portrait slot of the pool for a crewmate: persona
@@ -311,8 +354,10 @@ typedef struct
     unsigned z, w;
     int ent;             /* entity id counter, -1 = not in the line */
     unsigned frame;      /* recorded tactics frame */
+    long long step;      /* w=: the host's world step (see worldSteps), -1 = not in the line (older records) */
     int ao, to;          /* actor / type-2 target as actor ordinal (-1 = none or not an actor) */
     int statesBefore;    /* "state" lines in the record before it: the state to correct to before it is issued */
+    int byGuest;         /* live guest: the host played it for this guest (" by=guest"): its own command back */
     unsigned char data[MAX_VEC_BYTES + 8];
     int dataLen;
     char name[64];
@@ -322,6 +367,13 @@ static int scriptLen, scriptPos;
 static int endsSeen, luaSeen, idle, gateWait;
 static int luaRecordedLen, endsRecordedLen;
 static ULONGLONG worldTick;
+/* World steps (2026-11-28): fixed steps of 1/60 s the tactics world ran since its scene was made (HookWorldUpdate). Logged
+ * as w= on commands and turn ends, and the host's as "k <steps>" lines ~10 times a second: the guest's world runs exactly
+ * as many steps between two commands as the host's did (lockstep, see HookWorldUpdate). */
+static unsigned long long worldSteps;
+static long long hostSteps = -1;   /* guest: the host's latest world step known (k lines, w= fields); -1 = none yet */
+static long long hostStepsFirst = -1;   /* guest: the first one read since the replay (re)started: its save's step */
+static int stepsAligned;           /* guest: worldSteps counts like the host's (0 after joining from a save) */
 
 /* State correction (replay = network guest): before a recorded player command (or turn end) is issued, the world is
  * set to the state the record had just before it (positions, health, who is alive), so a divergence is repaired
@@ -340,6 +392,13 @@ static int clearedFor;   /* scriptPos + 1 of the turn end whose faction was fini
 static wchar_t cutscenePath[MAX_PATH];
 static int cutsceneOn, quietFrames;
 #define CUTSCENE_QUIET 90
+/* Live guest: the waits of a file replay (made for a test run that matches a record to the frame) are far too long for
+ * someone playing: each command of the other player came 2-5 s late (45 idle frames, a state correction, 45 again; 150
+ * before an automatic one; 90 after every camera move — at 30 fps twice that). The order is all that matters live. */
+#define LIVE_IDLE 2
+#define LIVE_END_WAIT 40
+#define LIVE_CUTSCENE_QUIET 20
+static int live;
 
 static int CutsceneHold(void)
 {
@@ -350,7 +409,7 @@ static int CutsceneHold(void)
         if (f) fclose(f);
     }
     if (cutsceneOn) { quietFrames = 0; return 1; }
-    return ++quietFrames < CUTSCENE_QUIET;
+    return ++quietFrames < (live ? LIVE_CUTSCENE_QUIET : CUTSCENE_QUIET);
 }
 #define SYNC_TIMEOUT 600
 
@@ -512,6 +571,29 @@ void NetFreeTarget(unsigned char *t)
 }
 
 static unsigned *Rng(void) { return *(unsigned **)atRngPtr; }
+
+/* World RNG (2026-11-28): the game has one RNG, and between world steps the UI, particles and drawing turn it a
+ * different number of times on every PC — a shot started with the same RNG had it different already at the first world
+ * step after it, and now and then ended differently (the guest's shot hit, the host's missed). The fixed world steps
+ * (HookWorldUpdate) run on their own RNG state: swapped in before each step, out after it. Wherever the log has an
+ * RNG (cmd/end/spawn/scene, host and guest alike: the guest logs the synced value) the world RNG is set to it
+ * (RngMark), so both games start each stretch of steps from the same state and the steps keep it the same. */
+static unsigned worldRng[2];
+static int worldRngSet;
+/* Animation RNG (2026-11-28, CosmeticRng): the random start point of an animation (0x56529d) and the seed of a new
+ * animation component (0x563700) — in the cosmetic RNG they differed on every PC, and with them the poses (lockstep,
+ * HookWorldUpdate). Set from the RNG wherever the world RNG is (RngMark), so both games draw the same from there. */
+static unsigned *animRng;
+static void RngMark(void)
+{
+    unsigned *r = Rng();
+    if (r) { worldRng[0] = r[0]; worldRng[1] = r[1]; worldRngSet = 1; }
+    if (r && animRng)
+    {
+        animRng[0] = (r[0] ^ 0x2545f491u) | 1;
+        animRng[1] = (r[1] ^ 0x9e3779b9u) | 1;
+    }
+}
 
 /* The entity id counter of the world of sim (NULL if unreadable). */
 static int *EntityCounter(void *sim)
@@ -699,6 +781,258 @@ static int Busy(void *sim)
     __except (EXCEPTION_EXECUTE_HANDLER) { return 1; }
 }
 
+/* ---- the other player's aim: its crewmate raises the weapon and shows the sight line ----
+ * Aiming is a mode of TacticsTargetUI: every UI frame it runs 0x608da0(ui, float *dt, AimState *s = ui + 0x20)
+ * (ui + 0xfc actor id, + 0x100 action index; s + 0x6d angle valid, s + 0xc8 sight line shown). The aim angle lives in
+ * the actor: + 0xe0 (shown, with the sway) and + 0xe4 (where the stick / mouse points); the sight line is a trace
+ * projectile held by the actor (shared_ptr at + 0xf8): 0x376e30 makes it if there is none, 0x377290 points it along
+ * + 0xe0 — what the UI does every frame for the selected crewmate, and charging enemies (modifier
+ * ShowActorProjectileTrace, 0x3ba750) do for one that isn't selected.
+ * The player's own aim is sent ~15 times a second (host: "aim ..." lines in its log, the guest reads them with it;
+ * guest: "gaim ..." to the host), "off" when the aim mode is left:
+ *   aim ao=<actor ordinal> i=<action index> a=<angle +0xe0> b=<angle +0xe4> s=<sight line shown> v=<angle valid>
+ *   aim ao=<actor ordinal> off
+ * The other game sets the angles of that crewmate, the "aim" animation input and the sight line — only while its world
+ * is idle and (guest) has played everything the host sent before, and takes it all down when a command of that actor
+ * starts. Not synchronized: the actor's facing (aiming behind turns it around: the angle is relative to the facing). */
+typedef void (*AimUpdate_t)(void *ui, float *dt, void *state);
+typedef void *(*Store_t)(void *components);
+typedef void *(*Component_t)(void *storage, int id);
+typedef void *(*WeaponDef_t)(void *unused, void *name);
+typedef ULONG_PTR (*MapFind_t)(void *map, void *view);
+typedef void *(*TraceMake_t)(void *body, void *actor, void *weapon, void *action, float a);
+typedef void (*TraceAim_t)(void *body, void *actor, void *trace, float a, unsigned char valid);
+typedef void (*PtrReset_t)(void *sharedPtr);
+typedef void (*AnimInput_t)(void *unused, void *anim, void *view, unsigned char on);
+#define RVA_AimUpdate 0x608da0
+#define RVA_ActorStore 0x124a70    /* (world + 0x1c48) -> actor storage */
+#define RVA_BodyStore 0xd2580      /* (world + 0x1c48) -> storage of the component the sight line code gets first */
+#define RVA_AnimStore 0x27ee00     /* (world + 0x1c48) -> animation storage */
+#define RVA_Component 0xcdc90      /* (storage, id) -> component or NULL */
+#define RVA_WeaponDef 0x11ba20     /* (-, std::string *weapon name: actor + 0x288, or + 0x268 when that is empty) */
+#define RVA_ActionMap 0xeb07c0     /* action definitions by name: find 0xbad10(map, string_view *) -> index */
+#define RVA_ActionMapEnd 0xeb07d8
+#define RVA_ActionMapIdx 0xeb07e8  /* entries of 40 bytes, value index at + 0x20 */
+#define RVA_ActionDefs 0xeb07a8    /* value index * 2 -> definition */
+#define RVA_MapFind 0xbad10
+#define RVA_TraceMake 0x376e30
+#define RVA_TraceAim 0x377290
+#define RVA_PtrReset 0x18d8f0
+#define RVA_AnimInput 0x565890
+#define AIM_SEND_MS 66
+#define AIM_OFF_MS 200
+
+static AimUpdate_t realAimUpdate;
+static char *atActorStore, *atBodyStore, *atAnimStore, *atComponent, *atWeaponDef, *atMapFind, *atTraceMake, *atTraceAim,
+            *atPtrReset, *atAnimInput, *atActionMap, *atActionMapEnd, *atActionMapIdx, *atActionDefs;
+typedef struct { const char *p; size_t n; } View;
+
+static void AimResolve(void)
+{
+    static const struct { DWORD rva; char **at; } list[] = {
+        { RVA_ActorStore, &atActorStore }, { RVA_BodyStore, &atBodyStore }, { RVA_AnimStore, &atAnimStore },
+        { RVA_Component, &atComponent }, { RVA_WeaponDef, &atWeaponDef }, { RVA_MapFind, &atMapFind },
+        { RVA_TraceMake, &atTraceMake }, { RVA_TraceAim, &atTraceAim }, { RVA_PtrReset, &atPtrReset },
+        { RVA_AnimInput, &atAnimInput }, { RVA_ActionMap, &atActionMap }, { RVA_ActionMapEnd, &atActionMapEnd },
+        { RVA_ActionMapIdx, &atActionMapIdx }, { RVA_ActionDefs, &atActionDefs } };
+    for (int i = 0; i < (int)(sizeof list / sizeof list[0]); i++)
+    {
+        DWORD rva = ExeRva(list[i].rva);
+        *list[i].at = rva ? base + rva : NULL;
+        if (!rva) atTraceMake = NULL;   /* one missing = no remote aim */
+    }
+}
+
+static void *ComponentOf(void *sim, char *store, int id)
+{
+    char *world = *(char **)((char *)sim + 0x10);
+    void *storage = ((Store_t)store)(world + 0x1c48);
+    return storage ? ((Component_t)atComponent)(storage, id) : NULL;
+}
+
+/* Definition of the actor's action (by its name, as PlayerTurnSimulator and the aim UI look it up). */
+static void *ActionDef(void *actor, int index)
+{
+    unsigned char *first = *(unsigned char **)((char *)actor + 0x50), *last = *(unsigned char **)((char *)actor + 0x58);
+    if (index < 0 || index >= (last - first) / 0x38) return NULL;
+    unsigned char *s = first + index * 0x38;
+    __declspec(align(16)) View v;
+    v.n = *(size_t *)(s + 0x10);
+    v.p = *(size_t *)(s + 0x18) >= 16 ? *(const char **)s : (const char *)s;
+    ULONG_PTR it = ((MapFind_t)atMapFind)(atActionMap, &v);
+    if (it == *(ULONG_PTR *)atActionMapEnd) return NULL;
+    int k = *(int *)(*(char **)atActionMapIdx + it * 40 + 0x20);
+    return (*(void ***)atActionDefs)[k * 2];
+}
+
+static void AnimAim(void *sim, int id, int on)
+{
+    void *anim = ComponentOf(sim, atAnimStore, id);
+    __declspec(align(16)) View v = { "aim", 3 };
+    if (anim) ((AnimInput_t)atAnimInput)(NULL, anim, &v, (unsigned char)on);
+}
+
+typedef struct { int id, index, show, valid, active, drawn, traced, redo; float a, b, drawnA; } RemoteAim;
+static RemoteAim aims[8];
+/* A part of the remote aim that faulted is off for the rest of the game, the others go on (2026-11-28, laptop: the
+ * first try faulted somewhere and took the whole aim down, the host's own aim was then not sent either). */
+static int aimAnimOff, aimTraceOff;
+
+/* "ao=<n> i=... a=... b=... s=... v=..." / "ao=<n> off" from the other player. */
+static void AimFromLine(const char *p)
+{
+    if (!atTraceMake) return;
+    int ao = -1, index = -1, show = 0, valid = 1;
+    float a = 0, b = 0;
+    if (sscanf(p, "ao=%d", &ao) != 1) return;
+    int id = IdOfOrdinal(ao, -1), off = strstr(p, " off") != NULL;
+    if (id < 0 || OwnerOf(id) == me) return;   /* ours: the other game shouldn't be aiming it */
+    if (!off && sscanf(p, "ao=%d i=%d a=%f b=%f s=%d v=%d", &ao, &index, &a, &b, &show, &valid) != 6) return;
+    RemoteAim *r = NULL;
+    for (int k = 0; k < 8 && !r; k++) if (aims[k].id == id && (aims[k].active || aims[k].drawn)) r = &aims[k];
+    for (int k = 0; k < 8 && !r && !off; k++) if (!aims[k].active && !aims[k].drawn) { r = &aims[k]; memset(r, 0, sizeof *r); r->id = id; }
+    if (!r) return;
+    if (off) { r->active = 0; return; }
+    if (r->drawn && index != r->index) r->redo = 1;   /* another action (weapon): a new sight line */
+    r->index = index; r->a = a; r->b = b; r->show = show; r->valid = valid; r->active = 1;
+}
+
+static void AimUndraw(void *sim, RemoteAim *r)
+{
+    if (!r->drawn) return;
+    void *actor = FindActor(sim, r->id);
+    __try { if (actor && r->traced) ((PtrReset_t)atPtrReset)((char *)actor + 0xf8); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { aimTraceOff = 1; NetLog("# ERROR: the other player's sight line (%d) could not be taken down: sight lines off", r->id); }
+    __try { if (actor && !aimAnimOff) AnimAim(sim, r->id, 0); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { aimAnimOff = 1; NetLog("# ERROR: the other player's aim pose (%d) could not be taken down: poses off", r->id); }
+    r->drawn = r->traced = 0;
+}
+
+/* Every frame of the main world. */
+static void AimDraw(void *sim)
+{
+    if (!atTraceMake) return;
+    int quiet = !Busy(sim) && !(live && scriptPos < scriptLen);
+    for (int k = 0; k < 8; k++)
+    {
+        RemoteAim *r = &aims[k];
+        if (!r->active && !r->drawn) continue;
+        void *actor = FindActor(sim, r->id);
+        if (!actor) { memset(r, 0, sizeof *r); continue; }
+        if (r->redo) { r->redo = 0; AimUndraw(sim, r); }
+        if (!r->active || !quiet || (r->traced && !r->show)) { AimUndraw(sim, r); continue; }
+        if (r->drawn && r->a == r->drawnA) continue;
+        char *ac = (char *)actor;
+        int stage = 0;
+        __try
+        {
+            *(float *)(ac + 0xe0) = r->a;
+            *(float *)(ac + 0xe4) = r->b;
+            stage = 1;
+            if (!r->drawn && !aimAnimOff) AnimAim(sim, r->id, 1);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            if (stage == 0) { NetLog("# ERROR: the other player's aim angles (%d) could not be set: remote aim off", r->id); atTraceMake = NULL; return; }
+            aimAnimOff = 1;
+            NetLog("# ERROR: the other player's aim pose (%d) could not be shown: poses off", r->id);
+        }
+        r->drawn = 1;
+        r->drawnA = r->a;
+        if (!r->show || aimTraceOff) continue;
+        stage = 0;
+        __try
+        {
+            void *body = ComponentOf(sim, atBodyStore, r->id), *action = ActionDef(actor, r->index);
+            stage = 1;
+            void *weapon = ((WeaponDef_t)atWeaponDef)(NULL, ac + (*(size_t *)(ac + 0x298) ? 0x288 : 0x268));
+            stage = 2;
+            if (body && action && weapon)
+            {
+                void *trace = ((TraceMake_t)atTraceMake)(body, actor, weapon, action, 0.0f);
+                stage = 3;
+                if (trace) ((TraceAim_t)atTraceAim)(body, actor, trace, 0.0f, (unsigned char)(r->valid != 0));
+                r->traced = trace != NULL;
+            }
+            else if (!r->traced) NetLog("# the other player's sight line (%d): body %p action %p weapon %p", r->id, body, action, weapon);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            static const char *what[] = { "body/action lookup", "weapon lookup", "making the trace", "pointing the trace" };
+            aimTraceOff = 1;
+            NetLog("# ERROR: the other player's sight line (%d) faulted in %s: sight lines off, the raised weapon stays", r->id, what[stage]);
+        }
+    }
+}
+
+/* A command of this actor starts: its aim is over. */
+static void AimDropFor(void *sim, int id)
+{
+    for (int k = 0; k < 8; k++)
+        if (aims[k].id == id && (aims[k].active || aims[k].drawn)) { aims[k].active = 0; AimUndraw(sim, &aims[k]); }
+}
+
+/* The own aim, sent to the other player. */
+static int aimSentOrd = -1;
+static ULONGLONG aimSeenAt, aimSentAt;
+
+static void AimSend(const char *text)
+{
+    if (me == 1) { if (hosting) NetLog("aim %s", text); }
+    else if (me == 2) { char line[128]; sprintf(line, "gaim %s", text); NetTcpSend(line); }
+}
+
+static void HookAimUpdate(void *ui, float *dt, void *state)
+{
+    realAimUpdate(ui, dt, state);
+    if (!me || !mainSim) return;   /* the own aim is sent even when showing the other's failed */
+    static int lastIndex, lastShow, lastValid;
+    static float lastA;
+    int id, index, show, valid;
+    float a, b;
+    __try
+    {
+        id = *(int *)((char *)ui + 0xfc);
+        index = *(int *)((char *)ui + 0x100);
+        show = state ? *((unsigned char *)state + 0xc8) != 0 : 0;
+        valid = state ? *((unsigned char *)state + 0x6d) != 0 : 1;
+        void *actor = id ? FindActor(mainSim, id) : NULL;
+        if (!actor) return;
+        a = *(float *)((char *)actor + 0xe0);
+        b = *(float *)((char *)actor + 0xe4);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    int ao = OrdinalOf(id);
+    if (ao < 0 || !Mine(id)) return;
+    ULONGLONG now = GetTickCount64();
+    if (aimSentOrd >= 0 && aimSentOrd != ao)
+    {
+        char off[32];
+        sprintf(off, "ao=%d off", aimSentOrd);
+        AimSend(off);
+        aimSentOrd = -1;
+    }
+    aimSeenAt = now;
+    int changed = aimSentOrd < 0 || index != lastIndex || show != lastShow || valid != lastValid || fabsf(a - lastA) > 0.002f;
+    if (!changed || now - aimSentAt < AIM_SEND_MS) return;
+    char text[128];
+    sprintf(text, "ao=%d i=%d a=%.5f b=%.5f s=%d v=%d", ao, index, a, b, show, valid);
+    AimSend(text);
+    aimSentOrd = ao;
+    aimSentAt = now;
+    lastIndex = index; lastShow = show; lastValid = valid; lastA = a;
+}
+
+/* Every frame: the aim mode is gone (shot, cancelled, another crewmate). */
+static void AimWatch(void)
+{
+    if (aimSentOrd < 0 || GetTickCount64() - aimSeenAt < AIM_OFF_MS) return;
+    char off[32];
+    sprintf(off, "ao=%d off", aimSentOrd);
+    AimSend(off);
+    aimSentOrd = -1;
+}
+
 /* Same command as the record: actor by ordinal (by id for old records without ao=), action, target, flag. */
 static int SameCommand(const Entry *e, int id, int ao, int index, int type, const unsigned char *data, int len, int to, int flag)
 {
@@ -728,9 +1062,9 @@ static void HookEndActor(void *sim, void *actor)
         if (sim == mainSim) ScanActors(sim);
         int id = ActorId(actor);
         unsigned *r = Rng();
-        NetLog("cmd %u o=%s a=%d ao=%d i=-1 n=@done t=0: to=-1 fl=0 r=%08x:%08x e=%d d=0 f=%u pv=%u%s", ++seq, OriginLabel(origin),
-               id, OrdinalOf(id), r ? r[0] : 0, r ? r[1] : 0, EntityCount(sim), frame, previews,
-               mainSim && sim != mainSim ? "  # not the main actor simulator" : "");
+        NetLog("cmd %u o=%s a=%d ao=%d i=-1 n=@done t=0: to=-1 fl=0 r=%08x:%08x e=%d d=0 f=%u w=%llu pv=%u%s", ++seq, OriginLabel(origin),
+               id, OrdinalOf(id), r ? r[0] : 0, r ? r[1] : 0, EntityCount(sim), frame, worldSteps, previews,
+               mainSim && sim != mainSim ? "  # not the main actor simulator" : ""); RngMark();
     }
     depth++;
     realEndActor(sim, actor);
@@ -796,6 +1130,129 @@ static int FinishFaction(void *sim)
     return ended;
 }
 
+/* Host: turn ends logged when the crew last acted (TurnWatch: only a turn the crew played in can be stuck). */
+static int crewActedFor = -1;
+
+/* Host: where its own crewmates were last sent (the path's destination node: the first node of a move target). A guest
+ * move to one of these is refused — both players could move at the same moment and end up in one cell: the guest
+ * clicked a cell that was free in its game while the host's crewmate was already on its way there (2026-11-28). */
+#define MAX_DESTS 16
+static int destActor[MAX_DESTS], destNode[MAX_DESTS], destsLen;
+
+static int MoveDestination(int type, const unsigned char *data, int len)
+{
+    return type == 4 && len >= 8 + 16 ? *(const int *)(data + 8) : -1;   /* 8 bytes, then the nodes: {u32 node, u32, float cost, pad} */
+}
+
+static void NoteDestination(int id, int node)
+{
+    if (node < 0) return;
+    int k = 0;
+    while (k < destsLen && destActor[k] != id) k++;
+    if (k == destsLen)
+    {
+        if (destsLen == MAX_DESTS) return;
+        destsLen++;
+    }
+    destActor[k] = id;
+    destNode[k] = node;
+}
+
+/* The host's crewmate (alive here) last sent to this node, 0 = none. */
+static int DestinationTaken(void *sim, int node)
+{
+    for (int k = 0; k < destsLen; k++)
+        if (destNode[k] == node && FindActor(sim, destActor[k])) return destActor[k];
+    return 0;
+}
+
+/* ---- "wait" ----
+ * PlayerTurnSimulator "wait" (0x45bb20(pts): the HUD button / key, a signal of the HUD the PTS constructor connects):
+ * the selected crewmate gives up the rest of its turn. With an action selected that still has uses ([entry + 0x28] > 0)
+ * only that action's (0x390a90(sim, actor, index): its uses to 0, 0x390b10, then 0x390dd0 ends the actor's turn if
+ * nothing is left), else every action point (0x390930(sim, actor, -1) -> EndActor 0x390e20). Not a RequestAction: before,
+ * a guest's "wait" ended its crewmate's turn only in its own game and the host waited for that crewmate for ever
+ * (2026-11-28: both games stuck). Logged as a command with action index -2, target = the selected action's index:
+ *   cmd <seq> o=player a=<id> ao=<ordinal> i=-2 n=@wait t=2:<index> to=-1 fl=0 r=... e=... d=0 f=... pv=...
+ * The guest sends it to the host instead of doing it; the host and the guest's replay do what the button does (RunWait). */
+typedef void (*PtsWait_t)(void *pts);
+typedef void *(*PtsSelected_t)(void *pts);
+typedef void (*SpendAction_t)(void *sim, void *actor, int index);
+static PtsWait_t realPtsWait;
+#define RVA_PtsWait 0x45bb20
+#define RVA_PtsSelected 0x459c40
+#define RVA_SpendAction 0x390a90
+#define RVA_SpendPoints 0x390930
+#define INDEX_WAIT (-2)
+
+/* Uses left of the actor's action (entry + 0x28), -1 = no such action. */
+static int ActionUses(void *actor, int index)
+{
+    __try
+    {
+        unsigned char *first = *(unsigned char **)((char *)actor + 0x50), *last = *(unsigned char **)((char *)actor + 0x58);
+        if (index < 0 || index >= (last - first) / 0x38) return -1;
+        return *(int *)(first + index * 0x38 + 0x28);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return -1; }
+}
+
+static void LogWait(void *sim, void *actor, int index, int origin)
+{
+    char hex[16];
+    unsigned *r = Rng();
+    int id = ActorId(actor);
+    Hex(hex, (const unsigned char *)&index, 4);
+    if (hosting) crewActedFor = endsLogged;
+    NetLog("cmd %u o=%s a=%d ao=%d i=%d n=@wait t=2:%s to=-1 fl=0 r=%08x:%08x e=%d d=0 f=%u w=%llu pv=%u%s", ++seq, OriginLabel(origin), id,
+           OrdinalOf(id), INDEX_WAIT, hex, r ? r[0] : 0, r ? r[1] : 0, EntityCount(sim), frame, worldSteps, previews, bySuffix); RngMark();
+}
+
+/* What the button does, for a crewmate of the other game (the host: the guest's; the guest: what the host's log says). */
+static void RunWait(void *sim, void *actor, int index)
+{
+    DWORD spendAction = ExeRva(RVA_SpendAction), spendPoints = ExeRva(RVA_SpendPoints);
+    if (!spendAction || !spendPoints) { NetLog("# ERROR: wait: game addresses not found"); return; }
+    LogWait(sim, actor, index, replaying ? ORIGIN_REPLAY : ORIGIN_PLAYER);
+    depth++;   /* the actor's turn end inside is a consequence, not a command */
+    __try
+    {
+        if (index >= 0 && ActionUses(actor, index) > 0) ((SpendAction_t)(base + spendAction))(sim, actor, index);
+        else ((SpendAction_t)(base + spendPoints))(sim, actor, -1);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { NetLog("# ERROR: wait: the game's code failed"); }
+    depth--;
+}
+
+static int SendCommand(int ao, int index, int type, const unsigned char *data, int len, int to, int flag, const char *name);
+
+static void HookPtsWait(void *pts)
+{
+    void *actor = NULL;
+    int index = -1;
+    DWORD selected = ExeRva(RVA_PtsSelected);
+    if (mode != NET_OFF && me && selected)
+    {
+        __try { actor = ((PtsSelected_t)(base + selected))(pts); index = *(int *)((char *)pts + 0x30); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { actor = NULL; }
+    }
+    if (!actor || !mainSim) { realPtsWait(pts); return; }
+    int id = ActorId(actor);
+    if (HELD()) { NetLog("# wait dropped: waiting for the guest to enter the battle"); return; }
+    if (live)
+    {
+        /* The guest's: the host does it (it comes back in the host's log, like a command). */
+        if (!Mine(id)) NetLog("# wait for actor %d dropped: the host's", id);
+        else if (pending && frame != pendingFrame) NetLog("# wait dropped: the previous command is still on its way to the host");
+        else SendCommand(OrdinalOf(id), INDEX_WAIT, 2, (const unsigned char *)&index, 4, -1, 0, "@wait");
+        return;
+    }
+    LogWait(mainSim, actor, index, ORIGIN_PLAYER);
+    depth++;
+    realPtsWait(pts);
+    depth--;
+}
+
 static void HookRequestAction(void *sim, void *actor, int index, const void *target, unsigned char flag)
 {
     int origin = replaying && depth == 0 ? ORIGIN_REPLAY : Origin(), mainPreview = 0;
@@ -823,6 +1280,7 @@ static void HookRequestAction(void *sim, void *actor, int index, const void *tar
     if (len >= 0) Hex(hex, data, len); else strcpy(hex, "?");
     int id = ActorId(actor), ao = OrdinalOf(id), to = type == 2 && len == 4 ? OrdinalOf(*(int *)data) : -1;
     ActionName(actor, index, name, sizeof name);
+    if (depth == 0 && sim == mainSim) AimDropFor(sim, id);
 
     if (mode == NET_REPLAY && depth == 0 && origin == ORIGIN_PLAYER)
     {
@@ -858,9 +1316,14 @@ static void HookRequestAction(void *sim, void *actor, int index, const void *tar
     if (depth > 0 || origin == ORIGIN_OTHER || mainPreview) BackTrace(bt, sizeof bt);
 
     unsigned *r = Rng();
-    NetLog("cmd %u o=%s a=%d ao=%d i=%d n=%s t=%d:%s to=%d fl=%u r=%08x:%08x e=%d d=%d f=%u pv=%u%s%s", ++seq,
+    NetLog("cmd %u o=%s a=%d ao=%d i=%d n=%s t=%d:%s to=%d fl=%u r=%08x:%08x e=%d d=%d f=%u w=%llu pv=%u%s%s", ++seq,
            OriginLabel(origin), id, ao, index, name[0] ? name : "?", type, hex, to, flag, r ? r[0] : 0, r ? r[1] : 0,
-           EntityCount(sim), depth, frame, previews, bt, depth == 0 ? bySuffix : "");
+           EntityCount(sim), depth, frame, worldSteps, previews, bt, depth == 0 ? bySuffix : ""); RngMark();
+    if (hosting && depth == 0 && sim == mainSim && (origin == ORIGIN_PLAYER || (origin == ORIGIN_REPLAY && replayAs < 0) || replayAs == ORIGIN_PLAYER))
+    {
+        crewActedFor = endsLogged;
+        if (!bySuffix[0] && len >= 0) NoteDestination(id, MoveDestination(type, data, len));
+    }
     depth++;
     realRequestAction(sim, actor, index, target, flag);
     depth--;
@@ -897,6 +1360,20 @@ static ULONG_PTR HookFactionDone(void *turn)
              * as the recorded one at the head. Autoplay has only the player's in its script. */
             Entry *head = scriptPos < scriptLen ? &script[scriptPos] : NULL;
             int ours = guest || origin == ORIGIN_PLAYER || origin == ORIGIN_REPLAY;
+            /* Automatic player commands (fl=1) the host's game gave and this one didn't (2026-11-28, laptop: the host
+             * reloaded twice in one frame after the turn end, the guest's game once) stand before the turn end: they
+             * count as done, else this turn end is "not in the record" and the guest falls out of step (it froze). */
+            if (ours && head && head->kind == 'c' && head->flag && head->origin == ORIGIN_PLAYER)
+            {
+                int k = scriptPos;
+                while (k < scriptLen && script[k].kind == 'c' && script[k].flag && script[k].origin == ORIGIN_PLAYER) k++;
+                if (k < scriptLen && script[k].kind == 'e')
+                {
+                    NetLog("# %d automatic player command(s) of the record before this turn end skipped (this game didn't give them)", k - scriptPos);
+                    scriptPos = k;
+                    head = &script[scriptPos];
+                }
+            }
             if (ours && head && head->kind == 'e')
             {
                 Sync(head, mainSim);
@@ -925,8 +1402,8 @@ static ULONG_PTR HookFactionDone(void *turn)
         void *expected = mainSim ? FactionDoneObject(mainSim) : NULL;
         unsigned *r = Rng();
         endsLogged++;
-        NetLog("end %u o=%s r=%08x:%08x e=%d f=%u%s%s", ++seq, OriginLabel(origin), r ? r[0] : 0, r ? r[1] : 0,
-               EntityCount(mainSim), frame, bySuffix, !expected || expected == turn ? "" : "  # object differs from the simulator slot");
+        NetLog("end %u o=%s r=%08x:%08x e=%d f=%u w=%llu%s%s", ++seq, OriginLabel(origin), r ? r[0] : 0, r ? r[1] : 0,
+               EntityCount(mainSim), frame, worldSteps, bySuffix, !expected || expected == turn ? "" : "  # object differs from the simulator slot"); RngMark();
     }
     inFactionDone++;   /* it ends every actor's turn (0x390e20): consequences, not logged as commands */
     ULONG_PTR result = realFactionDone(turn);
@@ -935,12 +1412,14 @@ static ULONG_PTR HookFactionDone(void *turn)
 }
 
 /* The Lua correction answers "<state> <missing>"; *missing = actors alive in the host's state but gone here. */
-static int SyncDone(int wanted, int *missing)
+/* "<state> <missing> <changed>" from the Lua; changed = how many things it corrected (-1 = an older Lua: unknown). */
+static int SyncDone(int wanted, int *missing, int *changed)
 {
     FILE *f = _wfopen(syncedPath, L"r");
-    int n = -1, m = 0;
-    if (f) { if (fscanf(f, "%d %d", &n, &m) < 1) n = -1; fclose(f); }
+    int n = -1, m = 0, c = -1;
+    if (f) { if (fscanf(f, "%d %d %d", &n, &m, &c) < 1) n = -1; fclose(f); }
     if (missing) *missing = n == wanted ? m : 0;
+    if (changed) *changed = n == wanted ? c : -1;
     return n == wanted;
 }
 
@@ -994,6 +1473,10 @@ static const char *const nameKeys[] = {
     "coop_net_host_waiting", "coop_net_host_connected", "coop_net_host_closed", "coop_net_host_failed", "coop_net_host_joining",
     "coop_net_guest_waiting", "coop_net_guest_connected", "coop_net_guest_closed", "coop_net_guest_failed",
     "coop_net_turn_both", "coop_net_turn_p1", "coop_net_turn_p2", "coop_net_turn_enemy",
+    "tutorial_coop_net_guest_left", "tutorial_coop_net_guest_left_page1", "tutorial_coop_net_guest_back", "tutorial_coop_net_guest_back_page1",
+    "tutorial_coop_net_guest_lost", "tutorial_coop_net_guest_lost_page1", "tutorial_coop_net_host_left", "tutorial_coop_net_host_left_page1",
+    "tutorial_coop_net_host_lost", "tutorial_coop_net_host_lost_page1",
+    "coop_net_refused_cell", "coop_net_refused_gone", "coop_net_refused_notyours", "coop_net_refused_bad",
 };
 
 /* The value std::string of a text key in the game's table (NULL: no table yet / no such key). */
@@ -1155,12 +1638,38 @@ static void GuestPlayPump(void *sim)
 }
 
 /* ---- host: the guest's commands ---- */
+/* A guest command the host doesn't play: the guest hears it in the host's log ("refused ao=<ordinal> <why>", it stops
+ * waiting for the command and shows why over its crewmate). The rest of the same guest frame (the door at the end of a
+ * refused move) goes the same way. */
+static unsigned refusedFrame = ~0u;
+
+static void Refuse(int ao, unsigned guestFrame, const char *why, const char *text)
+{
+    refusedFrame = guestFrame;
+    NetLog("# guest command for actor ordinal %d refused: %s", ao, text);
+    NetLog("refused ao=%d %s", ao, why);
+}
+
 static void HostPlay(void *sim, const char *line)
 {
     if (strcmp(line, "ready") == 0)
     {
         if (!guestIn) NetLog("# the guest is in the battle: it goes on");
         guestIn = 1;
+        if (guestAway)
+        {
+            guestAway = 0;
+            NetLog("# the guest is back in the battle: its crewmates are its own again");
+            Notify("guest_back", 0);
+        }
+        return;
+    }
+    if (strcmp(line, "left") == 0)
+    {
+        /* The guest's player quit to the main menu (not a rejoin of its own). */
+        NetLog("# the guest left the battle: its crewmates are the host's until it is back");
+        if (!guestAway) Notify("guest_left", 0);
+        guestAway = 1;
         return;
     }
     int ao, index, type = -1, n;
@@ -1171,12 +1680,30 @@ static void HostPlay(void *sim, const char *line)
         const char *colon = strchr(t, ':');
         int len = colon && sscanf(t + 3, "%d", &type) == 1 ? FromHex(colon + 1, data, sizeof data) : -1;
         int to = atoi(pto + 4), flag = atoi(pfl + 4), id = IdOfOrdinal(ao, -1);
+        const char *pf = strstr(line, " f=");
+        unsigned gf = pf ? (unsigned)strtoul(pf + 3, NULL, 10) : ~1u;
         void *actor = id >= 0 ? FindActor(sim, id) : NULL;
-        if (!actor) { NetLog("# guest command for actor ordinal %d: no such actor here, ignored", ao); return; }
-        if (OwnerOf(id) == 1) { NetLog("# guest command for the host's actor %d (ordinal %d) refused", id, ao); return; }
+        if (!actor) { Refuse(ao, gf, "gone", "no such actor here"); return; }
+        if (OwnerOf(id) == 1 && !guestAway) { Refuse(ao, gf, "notyours", "the host's crewmate"); return; }
+        if (gf == refusedFrame) { Refuse(ao, gf, "chain", "the command before it in that frame was refused"); return; }
+        int node = MoveDestination(type, data, len), taken = node >= 0 ? DestinationTaken(sim, node) : 0;
+        if (taken && taken != id) { Refuse(ao, gf, "cell", "the host's crewmate went to that cell meanwhile"); return; }
+        otherActive = id;   /* the other player's crewmate: the host's camera follows it when its own crew is done */
+        if (index == INDEX_WAIT)
+        {
+            if (len != 4) { Refuse(ao, gf, "bad", "a wait with a bad target"); return; }
+            replaying = 1;
+            replayAs = ORIGIN_PLAYER;
+            bySuffix = " by=guest";
+            RunWait(sim, actor, *(int *)data);
+            bySuffix = "";
+            replaying = 0;
+            replayAs = -1;
+            return;
+        }
         if (len == 4 && type == 2 && to >= 0) { int tid = IdOfOrdinal(to, *(int *)data); memcpy(data, &tid, 4); }
         unsigned char target[TARGET_SIZE + 8];
-        if (len < 0 || !NetBuildTarget(target, type, data, len)) { NetLog("# guest command with a bad target, ignored"); return; }
+        if (len < 0 || !NetBuildTarget(target, type, data, len)) { Refuse(ao, gf, "bad", "a bad target"); return; }
         replaying = 1;
         replayAs = ORIGIN_PLAYER;
         bySuffix = " by=guest";
@@ -1185,6 +1712,7 @@ static void HostPlay(void *sim, const char *line)
         replaying = 0;
         replayAs = -1;
         NetFreeTarget(target);
+
         /* Autoplay host (test): the old record's command of the guest's actor that it waited for. */
         Entry *head = autoplay && scriptPos < scriptLen ? &script[scriptPos] : NULL;
         if (head && head->kind == 'c' && OwnerOf(IdOfOrdinal(head->ao, head->actor)) == 2)
@@ -1247,13 +1775,16 @@ static void HostPump(void *sim)
 {
     static char line[2 * (MAX_VEC_BYTES + 8) + 128], next[sizeof line];
     static int have;
-    if (!have && !(have = NetTcpPoll(line, sizeof line))) return;
+    if (!have) have = NetTcpPoll(line, sizeof line);
+    while (have && strncmp(line, "gaim ", 5) == 0) { AimFromLine(line + 5); have = NetTcpPoll(line, sizeof line); }   /* aim: now, not logged */
+    if (!have) return;
     if (Busy(sim) || replaying) return;
     for (;;)
     {
         if (strcmp(line, "ready") != 0 && strcmp(line, "joined") != 0) NetLog("# from the guest: %.120s", line);   /* "ready" comes every few seconds */
         HostPlay(sim, line);
         have = NetTcpPoll(next, sizeof next);
+        while (have && strncmp(next, "gaim ", 5) == 0) { AimFromLine(next + 5); have = NetTcpPoll(next, sizeof next); }
         if (!have) return;
         const char *f1 = strstr(line, " f="), *f2 = strstr(next, " f=");
         int chained = strncmp(line, "gcmd", 4) == 0 && strncmp(next, "gcmd", 4) == 0 && f1 && f2 && atoi(f1 + 3) == atoi(f2 + 3);
@@ -1265,12 +1796,14 @@ static void HostPump(void *sim)
 static int sceneAt[16];   /* guest: the script entry each of the host's scene lines came before */
 static long long sceneCheckpoint[16];   /* guest: > 0 = that scene is the host's checkpoint load, host log byte after its line */
 static long long checkpointLine;        /* guest: a "checkpoint" line arrived (host log byte after it), its scene comes next */
+static int saveAfterCheckpoint;         /* host: 1 = a checkpoint was loaded, 2 = its scene made (the old battle's ticks don't count) */
+static ULONGLONG checkpointSceneAt;     /* host: when that scene was made */
 static long long needFrom;              /* guest: the host's save must be from this host log byte on (0: any) */
 
 static void Pump(void *sim)
 {
     if (mode != NET_REPLAY || HELD()) return;
-    if (live && frame % 4 == 0) ReadMore();
+    if (live) ReadMore();   /* every frame: each one skipped is lag on the other player's actions (was every 4th) */
     while (earlyEnds && scriptPos < scriptLen && script[scriptPos].kind == 'e')
     {
         earlyEnds--;
@@ -1330,12 +1863,17 @@ static void Pump(void *sim)
          * game's to give; forced late. The host's AI commands and enemy turn ends are only ours (the AI is off). */
         /* A live guest's turn ends are the host's (its own game's are sent there): issued without waiting. */
         int gameGives = e->origin != ORIGIN_AI && (e->kind == 'e' ? !live : e->flag);
-        if (guest && e->kind == 'e' && e->origin == ORIGIN_OTHER && idle >= IDLE_FRAMES && clearedFor != scriptPos + 1)
+        int idleFrames = live && !autoplay ? LIVE_IDLE : IDLE_FRAMES, endWait = live && !autoplay ? LIVE_END_WAIT : END_WAIT;
+        /* Ending the enemy turn ourselves keeps the full wait even for a live guest: after LIVE_IDLE frames it came before
+         * the enemy turn had begun here (its camera, the mission's turn-begin script): the guest's turn ended first,
+         * reinforcements never came, a needless rejoin followed (2026-11-28, nettest --checkpoint, 8/20). */
+        int enemyEnd = guest && e->kind == 'e' && e->origin == ORIGIN_OTHER;
+        if (enemyEnd && idle >= IDLE_FRAMES && clearedFor != scriptPos + 1)
         {
             clearedFor = scriptPos + 1;
             NetLog("# turn end %d: the host's AI was done, turn of %d actors ended", scriptPos + 1, FinishFaction(sim));
         }
-        if (idle < (gameGives ? END_WAIT : IDLE_FRAMES)) return;
+        if (idle < (enemyEnd ? IDLE_FRAMES : gameGives ? endWait : idleFrames)) return;
         if (!autoplay && e->statesBefore > statesSynced)
         {
             if (syncWanted != e->statesBefore)
@@ -1344,13 +1882,14 @@ static void Pump(void *sim)
                 syncWait = 0;
                 SyncRequest(syncWanted);
             }
-            int missing = 0;
-            if (!SyncDone(syncWanted, &missing) && ++syncWait < SYNC_TIMEOUT) return;
+            int missing = 0, changed = -1;
+            if (!SyncDone(syncWanted, &missing, &changed) && ++syncWait < SYNC_TIMEOUT) return;
             if (syncWait >= SYNC_TIMEOUT) NetLog("# DIFF: state %d not corrected (no answer from the mission Lua)", syncWanted);
             statesSynced = syncWanted;
-            idle = 0;
-            if (missing > 0 && live && guest) { Resync(missing); return; }
-            return;   /* the correction may start actions: wait for idle again */
+            if (missing > 0 && live && guest) { idle = 0; Resync(missing); return; }
+            /* The correction may start actions: wait for idle again — unless it changed nothing (the usual case; that
+             * second wait was lag on every command of a live guest). */
+            if (changed != 0 || Busy(sim)) { idle = 0; return; }
         }
     }
     if (hosting && autoplay && e->kind == 'c' && OwnerOf(IdOfOrdinal(e->ao, e->actor)) == 2 && FindActor(sim, IdOfOrdinal(e->ao, e->actor)))
@@ -1362,6 +1901,17 @@ static void Pump(void *sim)
         scriptPos++;
         NetLog("# DIFF: autoplay %d: the guest did not play its command (%s of ordinal %d), skipped", scriptPos, e->name, e->ao);
         return;
+    }
+    /* Lockstep: the host gave it after w world steps, so it goes in here at that step too (HookWorldUpdate runs the world
+     * up to it and holds it there). A world that went past it (held free: actions, a dialogue) counts on from it. */
+    if (guest && e->step >= 0 && stepsAligned)
+    {
+        if ((long long)worldSteps < e->step) return;
+        if ((long long)worldSteps > e->step)
+        {
+            NetLog("# world steps: replay %d at step %llu, the host's at %lld: counted from here", scriptPos + 1, worldSteps, e->step);
+            worldSteps = (unsigned long long)e->step;
+        }
     }
     idle = 0;
     replaying = 1;
@@ -1380,12 +1930,23 @@ static void Pump(void *sim)
         unsigned char t[TARGET_SIZE + 8];
         static unsigned char data[MAX_VEC_BYTES + 8];
         LocalTargetData(e, data);
+        /* The host's AI: the camera goes there (the guest's enemy turn simulator, which moves the camera at the host,
+         * doesn't run). The host's player's crewmate: the one the camera follows once this player's crew is done
+         * (status line; 2026-11-28 the user found the jumps to every action of the other player jarring). */
+        if (actor && live && !e->byGuest && e->depth == 0 && e->origin == ORIGIN_AI) FocusOn(ActorId(actor));
+        if (actor && live && !e->byGuest && e->depth == 0 && e->origin == ORIGIN_PLAYER && !e->flag) otherActive = ActorId(actor);
         if (!actor) NetLog("# DIFF: replay %d: actor %d (ordinal %d) not found, skipped", scriptPos, e->actor, e->ao);
         else if (e->index == INDEX_DONE)
         {
             Sync(e, sim);
             HookEndActor(sim, actor);
         }
+        else if (e->index == INDEX_WAIT)
+        {
+            Sync(e, sim);
+            RunWait(sim, actor, e->dataLen == 4 ? *(int *)e->data : -1);
+        }
+
         else if (!NetBuildTarget(t, e->type, data, e->dataLen)) NetLog("# ERROR: replay %d: bad target", scriptPos);
         else
         {
@@ -1397,6 +1958,113 @@ static void Pump(void *sim)
     }
     replaying = 0;
     replayAs = -1;
+}
+
+/* The dialogue / camera flag of the mission Lua without CutsceneHold's quiet count (that one is the replay's). */
+static int CutsceneNow(void)
+{
+    static int on;
+    if (frame % 10 == 0)
+    {
+        FILE *f = _wfopen(cutscenePath, L"r");
+        on = f && fgetc(f) == '1';
+        if (f) fclose(f);
+    }
+    return on;
+}
+
+/* Ids of the actors of the faction whose turn it is (the turn state's list, as FinishFaction reads it). */
+static int CurrentFactionActors(void *sim, int *ids, int max)
+{
+    int n = 0;
+    __try
+    {
+        char *turn = (char *)FactionDoneObject(sim), *state = turn ? *(char **)(turn + 0x18) : NULL;
+        if (!state) return 0;
+        for (int *p = *(int **)(state + 0x28), *end = *(int **)(state + 0x30); p < end && n < max; p++) ids[n++] = *p;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    return n;
+}
+
+/* Host: a crew turn no one can go on with. The game ends the crew's turn itself when the selected crewmate is out of
+ * action points and no other one can be selected (PlayerTurnSimulator) — but a command that came over the network is
+ * not the PTS's own, and here the guest's crewmates can't be selected: when the turn's last action was the guest's,
+ * or the host's last crewmate finished while the guest's still had points, the turn sometimes never ended, in either
+ * game (2026-11-28: "both moved, no one can move any more"). When the guest's game did end it, its "gend" saved the
+ * day; when neither did, both waited for ever. Now the host ends it itself once the crew acted this turn, the world is
+ * quiet for STUCK_FRAMES and no actor of the faction has action points left (the game ends it in a few frames when it
+ * does). */
+#define STUCK_FRAMES 30   /* was 120 (2 s): the user pressed Wait / Esc in that pause, it felt like a stuck turn */
+static void TurnWatch(void *sim)
+{
+    static int quiet, endedFor = -1;
+    if (!hosting || HELD() || replaying || crewActedFor != endsLogged || endedFor == endsLogged || Busy(sim) || CutsceneNow())
+    {
+        quiet = 0;
+        return;
+    }
+    int ids[256], n = CurrentFactionActors(sim, ids, 256), crew = 0;
+    for (int i = 0; i < n; i++)
+    {
+        void *a = FindActor(sim, ids[i]);
+        if (!a) continue;
+        if (HasPoints(a)) { quiet = 0; return; }
+        if (OwnerOf(ids[i])) crew++;
+    }
+    if (!crew || ++quiet < STUCK_FRAMES) return;
+    quiet = 0;
+    endedFor = endsLogged;
+    void *turn = FactionDoneObject(sim);
+    if (!turn) return;
+    NetLog("# no crewmate has action points left, yet the turn didn't end: the host ends it");
+    replaying = 1;
+    replayAs = ORIGIN_PLAYER;
+    HookFactionDone(turn);
+    replaying = 0;
+    replayAs = -1;
+}
+
+/* The other player gone: the host takes over the guest's crewmates (after 5 s without a connection, it may come back
+ * by itself); the guest goes to the main menu after 15 s — and when the host quit its battle (its "hostleft" line) —
+ * where it joins the host's next battle by itself (NetIdle). Both are told with the game's popup (Notify). */
+static ULONGLONG quitAt;
+
+static void WatchOther(void)
+{
+    static int wasConnected, toldLost;
+    static ULONGLONG lostAt;
+    ULONGLONG now = GetTickCount64();
+    if (me == 2 && hostLeftAt)
+    {
+        hostLeftAt = 0;
+        NetLog("# the host left its battle: to the main menu in a few seconds (the host's next battle joins by itself)");
+        Notify("host_left", 0);
+        quitAt = now + 6000;
+    }
+    if (quitAt && now >= quitAt)
+    {
+        quitAt = 0;
+        NetQuitToMenu();
+    }
+    if (NetTcpState() == NET_TCP_CONNECTED) { wasConnected = 1; lostAt = 0; toldLost = 0; return; }
+    if (!wasConnected || toldLost) return;
+    if (!lostAt) lostAt = now;
+    if (me == 1 && now - lostAt > 5000)
+    {
+        toldLost = 1;
+        if (guestAway) return;
+        guestAway = 1;
+        NetLog("# the connection to the guest is gone: its crewmates are the host's until it is back");
+        Notify("guest_lost", 0);
+    }
+    if (me == 2 && now - lostAt > 15000)
+    {
+        toldLost = 1;
+        NetLog("# no connection to the host for 15 s: to the main menu in a few seconds (the host's next battle joins by itself)");
+        Notify("host_lost", 0);
+        quitAt = now + 6000;
+    }
 }
 
 static ULONG_PTR HookSimUpdate(void *sim, void *arg)
@@ -1417,46 +2085,185 @@ static ULONG_PTR HookSimUpdate(void *sim, void *arg)
         }
         if (me && frame % 30 == 0) { ReadCrew(); WriteStatus(sim); }
         if (me && namesDirty && frame % 10 == 0) ApplyNames();
-        if (hosting) HostPump(sim);
+        if (me) WatchOther();
+        if (hosting) { HostPump(sim); TurnWatch(sim); }
         Pump(sim);
+        if (me && sim == mainSim) { AimWatch(); AimDraw(sim); }
+
     }
     return realSimUpdate(sim, arg);
 }
 
 unsigned long long NetWorldTick(void) { return worldTick; }
 
-/* Fixed time step for the tactics world (netplay test on): the world update 0x480a10(world, game, float *dt) normally
+/* Fixed time step for the tactics world (netplay test on): the world update 0x480a10(world, game, WorldDt *dt) normally
  * gets the frame time, and projectiles / movement integrate with it — run 8: the same enemy shot at the same RNG state
  * missed in the record and hit in the replay. Real time is accumulated and the world gets whole steps of 1/60 s (up to
  * 4 per frame, a frame without a due step updates with dt 0 like a paused game). The time scale (slow motion, Turbo) is
- * applied inside, after this. The outcome preview runs this function on its copy with its own fixed step: untouched. */
-typedef ULONG_PTR (*WorldUpdate_t)(void *world, void *game, float *dt);
+ * applied inside, after this. The outcome preview runs this function on its copy with its own fixed step: untouched.
+ * WorldDt is { float dt; double time; } (the preview passes its copy's game time + 0x26a8 as time; the world hands it on
+ * to its simulators): until 2026-11-28 the hook passed a lone float, the time was whatever lay next to it on the stack.
+ * Now it is the steps' own time. */
+typedef struct { float dt; float pad; double time; } WorldDt;
+typedef ULONG_PTR (*WorldUpdate_t)(void *world, void *game, WorldDt *dt);
 static WorldUpdate_t realWorldUpdate;
 static float stepAcc;
 #define RVA_WorldUpdate 0x480a10
 #define FIXED_STEP (1.0f / 60.0f)
+#define CATCH_UP 3
+#define CATCH_UP_ENTRIES 3
 
-static ULONG_PTR HookWorldUpdate(void *world, void *game, float *dt)
+/* Poses on the world steps (2026-11-28). Hits are decided per body part (bodyparts.xml: head = crits, shield = no
+ * damage; a hat comes off), and the parts' polygons are where the skeleton's animation has them. The game advances the
+ * skeletons once per FRAME with the frame time, outside the world update (0xc3ad0: 0x37c100(world + 0x3f8, dt, x) and
+ * the skinned character simulator 0x57c4d0(world + 0x388, dt, x)); the outcome preview runs the same two after each of
+ * its fixed world steps (0x4551e0 / 0x4551f7). So the same shot of the guest's at the same RNG state, angle, position
+ * and facing took 1 HP on the guest and 0 on the host (hat): the target stood in another pose. Netplay: both run after
+ * every fixed world step with its dt (x the time scale, as the frame does), the frame's own calls get dt 0. And
+ * 0x57c4d0 skips characters outside the camera's view (world + 0x1c34: x, y, w, h — each PC's own camera) until they
+ * are back in it: during our calls the view is everything. The frame's x (third argument) is passed on as it was. */
+typedef void (*PoseSim_t)(void *sim, float dt, float x);
+static PoseSim_t realActorPose, realSkinned;
+static char *atActorPoseFrameRet, *atSkinnedFrameRet;
+static float frameX = 1.0f;
+static int poseSteps;   /* both hooks in: the poses go with the world steps */
+#define RVA_ActorPose 0x37c100
+#define RVA_Skinned 0x57c4d0
+#define RVA_ActorPoseFrameRet 0xc3dec   /* return addresses of the frame's calls in 0xc3ad0 */
+#define RVA_SkinnedFrameRet 0xc3e02
+
+static void HookActorPose(void *sim, float dt, float x)
+{
+    if (poseSteps && mode != NET_OFF && (char *)_ReturnAddress() == atActorPoseFrameRet) dt = 0;
+    realActorPose(sim, dt, x);
+}
+
+static void HookSkinned(void *sim, float dt, float x)
+{
+    if (poseSteps && mode != NET_OFF && (char *)_ReturnAddress() == atSkinnedFrameRet) { frameX = x; dt = 0; }
+    realSkinned(sim, dt, x);
+}
+
+static void PoseStep(void *world, void *game, float step)
+{
+    if (!poseSteps) return;
+    void *pose = NULL, *skin = NULL;
+    float *view = NULL, scale = 1;
+    __try
+    {
+        pose = *(void **)((char *)world + 0x3f8);
+        skin = *(void **)((char *)world + 0x388);
+        scale = *(float *)((char *)game + 0x1b70);
+        if (skin) view = (float *)(*(char **)((char *)skin + 0x10) + 0x1c34);
+        if (view) { volatile float probe = view[3]; (void)probe; }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    float d = step * scale;
+    if (pose) realActorPose(pose, d, frameX);
+    if (skin)
+    {
+        float keep[4];
+        memcpy(keep, view, sizeof keep);
+        view[0] = view[1] = -1e8f;
+        view[2] = view[3] = 2e8f;
+        realSkinned(skin, d, frameX);
+        memcpy(view, keep, sizeof keep);
+    }
+}
+
+/* Lockstep (2026-11-28). The fixed steps alone are not enough: between two commands the host's and the guest's worlds
+ * ran a different number of steps (waiting for each other, the network, loading) — and with them the idle animations
+ * (each starts at a random point of its loop, 0x56529d) and anything else on a timer. So the guest's world runs exactly
+ * as many: the host logs its step count (w= on commands and turn ends, "k <steps>" lines every K_EVERY steps); the
+ * guest's world is held (updates with dt 0, like a paused game) once it reaches the host's step of the next command
+ * — or the host's latest step, if none has come — and Pump gives the command at that step. Behind the host by more
+ * than CATCH_UP_STEPS it runs CATCH_UP times as fast, by more than JUMP_STEPS (the host waited for this game to load)
+ * it just counts from the host's step. Not held while actions run or a dialogue / camera is on (they need the world,
+ * and the host's took as long as it took there), or after HOLD_MAX frames held: a world gone past the host's step
+ * counts on from the next command (Pump). Joined from the host's save: counts from the first host step after it. */
+#define K_EVERY 6
+#define CATCH_UP_STEPS 20
+#define JUMP_STEPS 600
+#define HOLD_MAX 1200
+static unsigned long long kLogged;
+static unsigned holdFrames;
+static long long releasedCap = -1;   /* held HOLD_MAX frames at this step: not held there again */
+
+static long long StepCap(int stopped)
+{
+    if (!guest || stopped) return -1;
+    if (scriptPos < scriptLen) return script[scriptPos].step;   /* -1 in older records: not held */
+    return live ? hostSteps : -1;
+}
+
+static ULONG_PTR HookWorldUpdate(void *world, void *game, WorldDt *dt)
 {
     if (mode == NET_OFF || !dt || Origin() == ORIGIN_PREVIEW) return realWorldUpdate(world, game, dt);
-    float d = *dt;
+    float d = dt->dt;
     if (!(d > 0)) d = 0;
     if (d > 0.1f) d = 0.1f;
+    /* A live guest well behind the host (joined from the host's save: everything the host did since is replayed; or
+     * after a slow spell) runs its world CATCH_UP times as fast until it is back: before, a rejoin replayed the host's
+     * turn at normal speed, crewmates walking back from where the save had them (2026-11-28). Same fixed steps, more
+     * of them per frame: the battle is the same. */
+    int stopped = scenePos >= 0 && scenePos < scenesLen && sceneAt[scenePos] <= scriptPos;   /* the host is in another scene */
+    int behind = live && guest && !stopped && scriptLen - scriptPos >= CATCH_UP_ENTRIES;
+    long long cap = StepCap(stopped);
+    if (cap >= 0 && !stepsAligned && hostStepsFirst >= 0)
+    {
+        worldSteps = (unsigned long long)hostStepsFirst;
+        stepsAligned = 1;
+        NetLog("# world steps: joined at the host's step %lld", hostStepsFirst);
+    }
+    if (!stepsAligned) cap = -1;
+    if (cap >= 0 && cap - (long long)worldSteps > JUMP_STEPS && !Busy(mainSim))
+    {
+        NetLog("# world steps: %lld behind the host, counted from its step %lld", cap - (long long)worldSteps, cap);
+        worldSteps = (unsigned long long)cap;
+    }
+    if (cap >= 0 && cap - (long long)worldSteps >= CATCH_UP_STEPS) behind = 1;
+    if (behind) d *= CATCH_UP;
     stepAcc += d;
     ULONG_PTR r = 0;
-    int n = 0;
-    for (; stepAcc >= FIXED_STEP && n < 4; n++)
+    int n = 0, held = 0;
+    for (; stepAcc >= FIXED_STEP && n < (behind ? 4 * CATCH_UP : 4); n++)
     {
-        float step = FIXED_STEP;
+        if (cap >= 0 && (long long)worldSteps >= cap && cap != releasedCap)
+        {
+            if (holdFrames < HOLD_MAX && !Busy(mainSim) && !CutsceneNow()) { held = 1; break; }
+            if (holdFrames >= HOLD_MAX)
+            {
+                releasedCap = cap;
+                NetLog("# world steps: held %d frames at the host's step %lld, going on", HOLD_MAX, cap);
+            }
+        }
+        WorldDt step = *dt;
+        step.dt = FIXED_STEP;
+        step.time = (double)worldSteps * FIXED_STEP;
+        unsigned *g = Rng(), cosmetic[2] = { 0, 0 };
+        int swapped = g && worldRngSet;
+        if (swapped) { cosmetic[0] = g[0]; cosmetic[1] = g[1]; g[0] = worldRng[0]; g[1] = worldRng[1]; }
         r = realWorldUpdate(world, game, &step);
+        if (g)
+        {
+            worldRng[0] = g[0]; worldRng[1] = g[1]; worldRngSet = 1;
+            if (swapped) { g[0] = cosmetic[0]; g[1] = cosmetic[1]; }
+        }
+        worldSteps++;
+        PoseStep(world, game, FIXED_STEP);
         stepAcc -= FIXED_STEP;
     }
+    if (held) { stepAcc = 0; holdFrames++; }
+    else if (n > 0) holdFrames = 0;
     if (n == 0)
     {
-        float none = 0;
+        WorldDt none = *dt;
+        none.dt = 0;
+        none.time = (double)worldSteps * FIXED_STEP;
         r = realWorldUpdate(world, game, &none);
     }
     if (stepAcc > FIXED_STEP) stepAcc = 0;   /* too slow to keep up: the game slows down instead */
+    if (hosting && worldSteps - kLogged >= K_EVERY) { kLogged = worldSteps; NetLog("k %llu", worldSteps); }
     return r;
 }
 
@@ -1529,7 +2336,7 @@ static ULONG_PTR SpawnHook(Spawn_t real, void *a, void *b, void *c, void *d, voi
     if (mode != NET_OFF)
     {
         if (missing) NetLog("# DIFF: spawn %d not in the record (its RNG not set)", spawnPos + 1);
-        NetLog("spawn r=%08x:%08x f=%u", z, w, frame);
+        NetLog("spawn r=%08x:%08x f=%u", z, w, frame); RngMark();
     }
     return result;
 }
@@ -1547,6 +2354,7 @@ static ULONG_PTR HookSpawnEntrance(void *a, void *b, void *c, void *d, void *e, 
 static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
 {
     unsigned *r = Rng();
+    int inside = 0;   /* guest: joined inside the host's battle */
     if (rejoinPending && live)
     {
         /* The battle of the host's save written at the main menu: the replay starts over at that point of the log. */
@@ -1579,15 +2387,23 @@ static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
             return realSceneCreate(scene, a2, a3, a4);
         }
         else WaitForHost(&scenesLen, scenePos, 180000, "mission scene");
-        if (scenePos == -1) { scenePos = 0; NetLog("# joined inside the host's mission: no scene line, RNG from the commands"); }
+        if (scenePos == -1) { scenePos = 0; inside = 1; NetLog("# joined inside the host's mission: no scene line, RNG from the commands"); }
         else if (scenePos < scenesLen) { r[0] = sceneZ[scenePos]; r[1] = sceneW[scenePos]; scenePos++; }
         else NetLog("# DIFF: mission scene %d not in the record (its RNG not set)", scenePos + 1);
     }
-    if (mode != NET_OFF && r) NetLog("scene r=%08x:%08x", r[0], r[1]);
-    /* A new mission: the host waits for the guest again, the guest says "ready" again from it. */
-    if (hosting && guestIn) { guestIn = 0; NetLog("# new mission: waiting for the guest to enter the battle"); }
+    if (mode != NET_OFF && r) { NetLog("scene r=%08x:%08x", r[0], r[1]); RngMark(); }
+    /* World steps count from the scene, as the host's do; joined inside the host's battle: from its first step read. */
+    worldSteps = kLogged = 0;
+    holdFrames = 0;
+    releasedCap = -1;
+    stepsAligned = !inside;
+    /* A new mission: the host waits for the guest again (not for one that left), the guest says "ready" again from it. */
+    if (hosting && guestIn) { guestIn = 0; NetLog(guestAway ? "# new mission: the guest is away, not waited for" : "# new mission: waiting for the guest to enter the battle"); }
     readySentFor = 0;
+    userLeft = 0;
+    destsLen = 0;
     scenesMade++;
+    if (hosting && saveAfterCheckpoint == 1) { saveAfterCheckpoint = 2; checkpointSceneAt = GetTickCount64(); }
     return realSceneCreate(scene, a2, a3, a4);
 }
 
@@ -1622,6 +2438,7 @@ int NetParseLine(const char *line, void *entry)
     unsigned s;
     memset(e, 0, sizeof *e);
     e->ent = e->ao = e->to = -1;
+    e->step = -1;
     if (sscanf(line, "end %u o=%15s", &s, origin) == 2)
     {
         const char *r = strstr(line, " r=");
@@ -1651,8 +2468,9 @@ int NetParseLine(const char *line, void *entry)
         if (d) e->depth = atoi(d + 3);
         e->kind = 'c';
     }
-    const char *ent = strstr(line, " e="), *fr = strstr(line, " f=");
+    const char *ent = strstr(line, " e="), *fr = strstr(line, " f="), *ws = strstr(line, " w=");
     if (ent) e->ent = atoi(ent + 3);
+    if (ws) e->step = _strtoi64(ws + 3, NULL, 10);
     if (fr) e->frame = (unsigned)strtoul(fr + 3, NULL, 10);
     for (int o = 0; o <= ORIGIN_REPLAY; o++)
         if (strcmp(origin, NetOriginName(o)) == 0) return o;
@@ -1673,6 +2491,7 @@ static int Append(Entry ***list, int *len, const Entry *e)
 }
 
 static wchar_t hostInfo[160];   /* live: "host:port" for the log */
+
 static long long scriptOffset;  /* bytes of the replay file already read */
 static int statesRecorded, scriptCap, aiCommands;
 
@@ -1722,7 +2541,40 @@ static void ParseScriptLine(const char *line)
         checkpointLine = NetTcpBase() + scriptOffset;
         return;
     }
+    int refusedAo;
+    char why[16];
+    if (sscanf(line, "refused ao=%d %15s", &refusedAo, why) == 2)
+    {
+        /* The host didn't play our command: stop waiting for it, say why over the crewmate. */
+        if (pending > 0) pending--;
+        char name[32];
+        sprintf(name, "refused_%s", why);
+        if (strcmp(why, "chain") != 0) Notify(name, IdOfOrdinal(refusedAo, -1));   /* the rest of a refused frame: said already */
+        return;
+    }
+    if (line[0] == 'k' && line[1] == ' ')
+    {
+        hostSteps = _strtoi64(line + 2, NULL, 10);   /* the host's world step (only a hosting game writes these) */
+        if (hostStepsFirst < 0) hostStepsFirst = hostSteps;
+        return;
+    }
+    if (strncmp(line, "aim ", 4) == 0)
+    {
+        if (live) AimFromLine(line + 4);   /* the host's aim (a file replay: ignored) */
+        return;
+    }
+    if (strncmp(line, "hostleft", 8) == 0)
+    {
+        /* The host quit its battle to the main menu: this battle is over too (HookSimUpdate goes to the menu). */
+        hostLeftAt = GetTickCount64();
+        return;
+    }
     int o = NetParseLine(line, &tmp);
+    if (o >= 0 && tmp.step >= 0 && o != ORIGIN_PREVIEW)
+    {
+        hostSteps = tmp.step;
+        if (hostStepsFirst < 0) hostStepsFirst = tmp.step;
+    }
     if (o >= 0 && tmp.kind == 'e') endsArrived++;
     if (o >= 0 && tmp.kind == 'c' && pending && strstr(line, " by=guest")) pending--;   /* ours, back from the host */
     if (o < 0 || o == ORIGIN_PREVIEW || (tmp.kind == 'c' && tmp.depth > 0)) return;   /* nested = a consequence */
@@ -1732,6 +2584,7 @@ static void ParseScriptLine(const char *line)
      * commands and every turn end. Script commands and consequences follow by themselves. */
     int take = tmp.kind == 'e' ? (o == ORIGIN_PLAYER || guest) : (o == ORIGIN_PLAYER || (guest && o == ORIGIN_AI));
     tmp.origin = o;
+    tmp.byGuest = strstr(line, " by=guest") != NULL;
     tmp.statesBefore = statesRecorded;
     tmp.luaBefore = luaRecordedLen;
     tmp.endsBefore = endsRecordedLen;
@@ -1803,6 +2656,8 @@ static void ResetForJoin(int ends)
     ordSim = NULL;
     readySentFor = 0;
     joinedMid = 1;
+    hostSteps = hostStepsFirst = -1;
+    stepsAligned = 0;
     DeleteFileW(syncPath);
     DeleteFileW(syncedPath);
 }
@@ -1851,7 +2706,7 @@ static ULONGLONG menuSince, continueAt;
 typedef void (*Checkpoint_t)(void *game);
 static Checkpoint_t realCheckpoint;
 #define RVA_Checkpoint 0xc7410
-static int saveAfterCheckpoint, checkpointWanted;
+static int checkpointWanted;
 
 static void HookCheckpoint(void *game)
 {
@@ -1903,7 +2758,7 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
     ULONG_PTR r = realGameUpdate(game, dt);
     menuSince = 0;
     int battle = *(int *)((char *)game + 0x110) <= 1, ticking = worldTick && GetTickCount64() - worldTick < 1000;
-    if (saveAfterCheckpoint && battle && ticking)
+    if (saveAfterCheckpoint == 2 && battle && ticking && worldTick > checkpointSceneAt)
     {
         saveAfterCheckpoint = 0;
         *((unsigned char *)game + 0xb4) = 1;
@@ -1938,14 +2793,23 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
     return r;
 }
 
+/* The player quit to the main menu (pause, Quit — or the dll asked for it: quitWanted). A guest's own quit (to rejoin
+ * or follow the host) comes back by itself; one its player chose is told to the host, and the guest's slot gets the
+ * host's save of the battle without Continue being pressed: the player's own Continue there joins the host again. A
+ * host's quit from its battle sends the guest to the main menu too ("hostleft"). */
 static ULONG_PTR HookQuit(void *game, void *a2, void *a3, void *a4)
 {
+    int ours = quitWanted, inBattle = worldTick && GetTickCount64() - worldTick < 2000;
     quitWanted = 0;
-    if (me == 2 && worldTick && GetTickCount64() - worldTick < 2000)
+    if (me == 2 && inBattle)
     {
         leftMid = 1;
-        NetLog("# guest: left the battle for the main menu: Continue there joins the host's battle again");
+        userLeft = !ours;
+        if (userLeft) NetTcpSend("left");
+        NetLog(userLeft ? "# guest: the player left the battle for the main menu: Continue there joins the host's battle again"
+                        : "# guest: left the battle for the main menu: Continue there joins the host's battle again");
     }
+    if (me == 1 && inBattle && !ours) NetLog("hostleft");
     return realQuit(game, a2, a3, a4);
 }
 
@@ -1979,8 +2843,9 @@ static ULONG_PTR HookMenuUpdate(void *menu, void *dt)
             rejoinFrom = nextFrom;
             rejoinEnds = nextEnds;
             rejoinPending = 1;
-            continueAt = now + 1500;
-            NetLog("# main menu: the host's save from its battle (host log byte %lld) is in this game's slot %d", nextFrom, GuestSlotIndex() + 1);
+            continueAt = userLeft ? 0 : now + 1500;
+            NetLog(userLeft ? "# main menu: the host's save from its battle (host log byte %lld) is in this game's slot %d: Continue there joins it"
+                            : "# main menu: the host's save from its battle (host log byte %lld) is in this game's slot %d", nextFrom, GuestSlotIndex() + 1);
         }
         else NetLog("# ERROR: main menu: the host's save could not be written to the slot");
         free(nextSave);
@@ -2048,6 +2913,68 @@ void NetIdle(void)
         else free(data);
     }
     if (now - lastFetch >= 3000) { lastFetch = now; NetTcpFetchStart(); }
+}
+
+/* Cosmetic RNG (2026-11-28). The game has one RNG; particles, sounds, music and the HUD draw from it inside the world
+ * steps too, as often as the screen / camera / audio of that PC asks — the host's and the guest's games drew different
+ * numbers of times while a shot flew, and the gameplay draws after them (crit rolls, damagesimulator 0x3e89c0) got
+ * different values: the guest's shot hit, the host's missed. Found with a guard page on the RNG state (writers per world
+ * step, host vs guest): particles 0x797a00/0x7a0530/0x7934d0..., sound 0x6f46b0 (audiocues) / 0x80c0a0 (oalsoundplayer),
+ * HUD 0x61..., entity effects 0x122800. Their loads of the RNG pointer ("mov reg, [rip + -> 0xea1b98]") are
+ * pointed at a cell of ours that holds a second RNG state; gameplay keeps the game's. Netplay sessions only.
+ * The two of the animation simulator (0x564bc0: random start point of an animation; 0x563630: seed of a new
+ * animation component) were cosmetic too until the poses turned out to decide hits: they get a third state (animRng). */
+static const DWORD cosmeticSites[] = {
+    0x122ade, 0x3fb275, 0x615842, 0x615cdf, 0x617e96, 0x61a8df, 0x61e89e, 0x6f4a3c, 0x6f4b0c,
+    0x793503, 0x7974c7, 0x79753f, 0x7975aa, 0x797660, 0x79766e, 0x797748, 0x797b75, 0x798151, 0x7a0564, 0x80c24b };
+/* The animation simulator's two (animRng, RngMark): a third RNG state in the same cell. */
+static const DWORD animSites[] = { 0x563700, 0x56529d };
+
+/* Points the RNG pointer load at steamRva ("mov reg, [rip + -> RVA_RngPtr]") at slot (within +-2 GB of the code). */
+static int RedirectRng(DWORD steamRva, DWORD rngRva, unsigned char *slot)
+{
+    DWORD rva = ExeRva(steamRva);
+    if (!rva) return 0;
+    unsigned char *at = (unsigned char *)base + rva;
+    if (!((at[0] == 0x48 || at[0] == 0x4c) && at[1] == 0x8b && (at[2] & 0xc7) == 0x05)) return 0;
+    LONGLONG target = (LONGLONG)(rva + 7) + *(int *)(at + 3);
+    if (target != (LONGLONG)rngRva) return 0;
+    LONGLONG disp = (LONGLONG)(slot - (at + 7));
+    if (disp < INT_MIN || disp > INT_MAX) return 0;
+    DWORD old;
+    if (!VirtualProtect(at + 3, 4, PAGE_EXECUTE_READWRITE, &old)) return 0;
+    *(int *)(at + 3) = (int)disp;
+    VirtualProtect(at + 3, 4, old, &old);
+    return 1;
+}
+
+static void CosmeticRng(void)
+{
+    DWORD rngRva = ExeRva(RVA_RngPtr);
+    if (!rngRva) return;
+    unsigned char *cell = NULL;
+    /* within +-2 GB of the code: rip-relative */
+    for (ULONG_PTR a = ((ULONG_PTR)base - 0x10000) & ~(ULONG_PTR)0xffff; a > (ULONG_PTR)base - 0x70000000 && !cell; a -= 0x10000)
+        cell = (unsigned char *)VirtualAlloc((void *)a, 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!cell) { NetLog("# ERROR: cosmetic RNG: no memory near the exe"); return; }
+    unsigned *state = (unsigned *)(cell + 16), *game = Rng();
+    state[0] = game ? game[0] ^ 0x5bd1e995u : 0x12345678u;
+    state[1] = game ? game[1] ^ 0x1b873593u : 0x9abcdef0u;
+    if (!state[0]) state[0] = 1;
+    if (!state[1]) state[1] = 1;
+    *(unsigned **)cell = state;
+    unsigned *anim = (unsigned *)(cell + 0x110);
+    anim[0] = state[0] ^ 0x2545f491u;
+    anim[1] = state[1] ^ 0x9e3779b9u;
+    *(unsigned **)(cell + 0x100) = anim;
+    int done = 0, n = (int)(sizeof cosmeticSites / sizeof cosmeticSites[0]);
+    for (int i = 0; i < n; i++) done += RedirectRng(cosmeticSites[i], rngRva, cell);
+    int animDone = 0, animN = (int)(sizeof animSites / sizeof animSites[0]);
+    for (int i = 0; i < animN; i++) animDone += RedirectRng(animSites[i], rngRva, cell + 0x100);
+    if (animDone == animN) animRng = anim;   /* else: the ones redirected draw from it unsynced, as cosmetics */
+    FlushInstructionCache(GetCurrentProcess(), NULL, 0);
+    NetLog(done == n ? "# cosmetic RNG: %d of %d places (particles, sound, HUD) draw from their own RNG" : "# ERROR: cosmetic RNG: only %d of %d places", done, n);
+    NetLog(animDone == animN ? "# animation RNG: %d of %d places, set with the world RNG" : "# ERROR: animation RNG: only %d of %d places", animDone, animN);
 }
 
 /* Inline hook: the first n bytes of the function (whole instructions, position-independent, n >= 14) are checked,
@@ -2243,6 +3170,9 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     DeleteFileW(crewPath);
     _snwprintf(statusPath, MAX_PATH, L"%s\\swh2_net_status.txt", dir);
     DeleteFileW(statusPath);
+    _snwprintf(focusPath, MAX_PATH, L"%s\\swh2_net_focus.txt", dir);
+    DeleteFileW(focusPath);
+
     if (hostPort > 0)
         NetLog(NetTcpHost(bindAddr, hostPort, outPath) ? "# host: guests connect to %s port %d" : "# ERROR: host on %s port %d not started",
                bindAddr[0] ? bindAddr : "any address,", hostPort);
@@ -2259,15 +3189,23 @@ void NetInstall(char *exeBase, const wchar_t *dir)
         realSlotUpdate = findChild ? (SlotUpdate_t)InlineHook(RVA_SlotUpdate, slotUpdate, sizeof slotUpdate, (void *)HookSlotUpdate) : NULL;
         if (!realSlotUpdate) NetLog("# ERROR: party slot hook not installed: no owner colours on the portraits");
         static const unsigned char gameUpdate[] = { 0x48,0x8b,0xc4,0x56,0x57,0x41,0x56,0x48,0x81,0xec,0x30,0x05,0x00,0x00 };
-        static const unsigned char checkpoint[] = { 0x57,0x48,0x83,0xec,0x30,0x48,0xc7,0x44,0x24,0x20,0xfe,0xff,0xff,0xff };
+        static const unsigned char checkpoint[] = { 0x40,0x57,0x48,0x83,0xec,0x30,0x48,0xc7,0x44,0x24,0x20,0xfe,0xff,0xff,0xff };   /* push rdi has a REX byte */
         realGameUpdate = (GameUpdate_t)InlineHook(RVA_GameUpdate, gameUpdate, sizeof gameUpdate, (void *)HookGameUpdate);
         realCheckpoint = (Checkpoint_t)InlineHook(RVA_Checkpoint, checkpoint, sizeof checkpoint, (void *)HookCheckpoint);
         NetLog(realGameUpdate && realCheckpoint ? "# %s: checkpoint loads followed" : "# ERROR: %s: checkpoint hooks not installed", me == 1 ? "host" : "guest");
+        static const unsigned char ptsWait[] = { 0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x57,0x48,0x83,0xec,0x20 };
+        realPtsWait = (PtsWait_t)InlineHook(RVA_PtsWait, ptsWait, sizeof ptsWait, (void *)HookPtsWait);
+        if (!realPtsWait) NetLog("# ERROR: %s: wait hook not installed: a guest's wait is not sent to the host", me == 1 ? "host" : "guest");
+        static const unsigned char aimUpdate[] = { 0x48,0x8b,0xc4,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57 };
+        AimResolve();
+        realAimUpdate = atTraceMake ? (AimUpdate_t)InlineHook(RVA_AimUpdate, aimUpdate, sizeof aimUpdate, (void *)HookAimUpdate) : NULL;
+        if (!realAimUpdate) { atTraceMake = NULL; NetLog("# ERROR: %s: aim hook not installed: the players don't see each other aim", me == 1 ? "host" : "guest"); }
+        static const unsigned char quit[] = { 0x4c,0x8b,0xdc,0x53,0x48,0x83,0xec,0x50,0x49,0xc7,0x43,0xd8,0xfe,0xff,0xff,0xff };
+        realQuit = (Quit_t)InlineHook(RVA_Quit, quit, sizeof quit, (void *)HookQuit);
+        if (me == 1 && !realQuit) NetLog("# ERROR: host: quit hook not installed: the guest isn't told when the host leaves its battle");
         if (me == 2)
         {
-            static const unsigned char quit[] = { 0x4c,0x8b,0xdc,0x53,0x48,0x83,0xec,0x50,0x49,0xc7,0x43,0xd8,0xfe,0xff,0xff,0xff };
             static const unsigned char menuUpdate[] = { 0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0x6c,0x24,0xc0 };
-            realQuit = (Quit_t)InlineHook(RVA_Quit, quit, sizeof quit, (void *)HookQuit);
             realMenuUpdate = (MenuUpdate_t)InlineHook(RVA_MenuUpdate, menuUpdate, sizeof menuUpdate, (void *)HookMenuUpdate);
             NetLog(realGameUpdate && realQuit && realMenuUpdate ? "# guest: the next battle joins without a restart (to the main menu, Continue: by itself)"
                                                                 : "# ERROR: guest: main menu hooks not installed: restart the game for the next battle");
@@ -2290,6 +3228,19 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     if (!realSpawnReinf || !realSpawnEntrance) NetLog("# ERROR: spawn hooks not installed: reinforcements may differ");
     static const unsigned char worldUpdate[] = { 0x48,0x8b,0xc4,0x55,0x57,0x41,0x54,0x41,0x56,0x41,0x57,0x48,0x8d,0x68,0xa1 };
     realWorldUpdate = (WorldUpdate_t)InlineHook(RVA_WorldUpdate, worldUpdate, sizeof worldUpdate, (void *)HookWorldUpdate);
+    static const unsigned char actorPose[] = { 0x48,0x8b,0xc4,0x48,0x89,0x70,0x20,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0x68,0xa1 };
+    static const unsigned char skinned[] = { 0x48,0x8b,0xc4,0x55,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0xa8,0xc8,0xfd,0xff,0xff };
+    DWORD poseRet = ExeRva(RVA_ActorPoseFrameRet), skinRet = ExeRva(RVA_SkinnedFrameRet);
+    if (realWorldUpdate && poseRet && skinRet)
+    {
+        atActorPoseFrameRet = base + poseRet;
+        atSkinnedFrameRet = base + skinRet;
+        realActorPose = (PoseSim_t)InlineHook(RVA_ActorPose, actorPose, sizeof actorPose, (void *)HookActorPose);
+        realSkinned = (PoseSim_t)InlineHook(RVA_Skinned, skinned, sizeof skinned, (void *)HookSkinned);
+    }
+    poseSteps = realActorPose && realSkinned;   /* one without the other: both stay per frame */
+    if (mode != NET_OFF) NetLog(poseSteps ? "# poses (skeletons, hit polygons) go with the world steps" : "# ERROR: pose hooks not installed: poses go by the frame time");
+    if (mode != NET_OFF) CosmeticRng();   /* record and replay alike */
     if (!realWorldUpdate) NetLog("# ERROR: world update hook not installed: no fixed time step");
     if (!realRequestAction || !realFactionDone || !realSimUpdate || !realAiStep || !realEnemyTurn || !realEndActor)
     {

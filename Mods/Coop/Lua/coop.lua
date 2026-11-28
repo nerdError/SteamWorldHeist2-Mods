@@ -24,6 +24,8 @@ C.order = { {ORDER} }         -- persona -> position in personas.xml (deal order
 C.entities = { {ENTITIES} }   -- tactics entity -> persona
 C.labelTurn = {LABEL_TURN}
 C.labelSelect = {LABEL_SELECT}
+C.labelAlways = {LABEL_ALWAYS}  -- name tags over the crewmates all the time (C.netTags)
+
 C.inputLock = {INPUT_LOCK}
 C.devices = { {DEVICES} }     -- player -> input device ("kbm", "pad1".."pad4", "all")
 C.netTest = {NET_TEST}        -- netplay test (developer): the dll's recorder is on
@@ -76,6 +78,7 @@ function C.Enter(script)
 	C.netLog = nil
 	C.netCleared = false   -- netplay status counters of this battle not removed yet
 	C.netCrewList, C.netPersona, C.netRole = {}, {}, nil
+	C.netEventSeq, C.focus, C.tags, C.netCam = nil, {}, {}, nil   -- notifications / camera / name tags of this battle
 	netOwners = {}
 	if os and os.remove then os.remove(file("swh2_net_crew.txt")) end
 	f = C.netTest and io.open(file(NETMODE), "r")
@@ -102,14 +105,14 @@ local SYNC, SYNCED, RECORD = "swh2_net_sync.txt", "swh2_net_synced.txt", "swh2_n
 local rec, lastFix = nil, nil
 
 local function loadRecord()
-	rec = { states = {}, ord = {} }
+	rec = { states = {}, ord = {}, born = {} }
 	local f = io.open(file(RECORD), "r")
 	if not f then return end
 	for line in f:lines() do
 		if line:sub(1, 6) == "state " then rec.states[#rec.states + 1] = line:sub(7)
 		else
 			local id, o = line:match("^actor (%-?%d+) o=(%d+)")
-			if id then rec.ord[tonumber(id)] = tonumber(o)
+			if id then rec.ord[tonumber(id)] = tonumber(o); rec.born[tonumber(id)] = #rec.states
 			elseif line:sub(1, 5) == "ords " then
 				local i = 0
 				for v in line:sub(6):gmatch("%-?%d+") do rec.ord[tonumber(v)] = i; i = i + 1 end
@@ -135,7 +138,7 @@ function C.netFix(E)
 	-- A live guest's record grows while the battle runs (the host streams it): read it again for a newer state.
 	if not rec or not rec.states[n] then loadRecord() end
 	local want = rec.states[n]
-	local moved, healed, killed, missing, lost = 0, 0, 0, 0, nil
+	local moved, healed, killed, missing, lost, turned = 0, 0, 0, 0, nil, 0
 	if want then
 		local localOf = {}   -- record id -> local id
 		for id, o in pairs(rec.ord) do if nums[o + 2] then localOf[id] = nums[o + 2] end end
@@ -166,6 +169,18 @@ function C.netFix(E)
 					E.SetActorHealth(a, hp)
 					healed = healed + 1
 				end
+				-- Facing (">L"/">R" after the health): a crewmate aimed at the guest turns there, the host's doesn't —
+				-- the shot then leaves from the other side of the gun and hits someone else.
+				local want = part:match(">([LR])$")
+				if want and E.GetEntityDirection and E.SetEntityDirection then
+					local d = E.GetEntityDirection(a)
+					local x = d and (d.x or d[1])
+					if type(x) == "number" and (x < 0 and "L" or "R") ~= want then
+						C.netWrite("# FIX " .. n .. ": actor " .. lid .. " facing " .. (x < 0 and "L" or "R") .. " -> " .. want)
+						E.SetEntityDirection(a, want == "L" and E.Vector.Left or E.Vector.Right)
+						turned = turned + 1
+					end
+				end
 			end
 		end
 		-- Nothing matched at all: the actor tables don't fit (not a real difference) — correcting would kill everyone.
@@ -174,7 +189,16 @@ function C.netFix(E)
 			alive = {}
 			lost = 0
 		end
+		local recordOf = {}   -- local id -> record id
+		for id, l in pairs(localOf) do recordOf[l] = id end
 		for lid, a in pairs(alive) do
+			local rid = recordOf[lid]
+			if not keep[lid] and rid and rec.born[rid] and rec.born[rid] >= n then
+				-- Born at the host after that state (a reinforcement): this game is just ahead, not wrong. Killing it
+				-- mid-entrance froze the guest's game (2026-11-28, laptop).
+				C.netWrite("# FIX " .. n .. ": actor " .. lid .. " came after this state at the host too, kept")
+				keep[lid] = true
+			end
 			if not keep[lid] then
 				C.netWrite("# FIX " .. n .. ": actor " .. lid .. " is not in the record's state, killed")
 				E.KillObject(a)
@@ -184,12 +208,12 @@ function C.netFix(E)
 	else
 		C.netWrite("# FIX " .. n .. ": the record has no such state line")
 	end
-	C.netWrite(string.format("fix %d moved=%d health=%d killed=%d missing=%d", n, moved, healed, killed, missing))
+	C.netWrite(string.format("fix %d moved=%d health=%d killed=%d missing=%d turned=%d", n, moved, healed, killed, missing, turned))
 	lastFix = line
 	-- "<state> <missing>": actors alive at the host but gone here can't be brought back — the dll rejoins the host's
-	-- battle from its save (hard correction).
+	-- battle from its save (hard correction). Third: how many things were corrected (0 = the dll goes on right away).
 	f = io.open(file(SYNCED), "w")
-	if f then f:write(n, " ", lost or missing, "\n"); f:close() end
+	if f then f:write(n, " ", lost or missing, " ", moved + healed + killed + turned, "\n"); f:close() end
 end
 
 -- Netplay test: "a dialogue / camera sequence is on" for the dll autopilot (swh2coop.c "cutscenes on" presses Return
@@ -239,6 +263,24 @@ function C.netClearStatus(RemoveCounter)
 	for _, n in ipairs(NET_COUNTERS) do RemoveCounter("coop_net_" .. n) end
 end
 
+-- Notifications from the dll (the last one rides on the status line: "<seq> <name> <actor id>"): a player left /
+-- came back / lost the connection = the game's popup window (tutorials_popup.xml coop_net_<name>, forced: shown every
+-- time); a refused command = a text over that crewmate. The one already there when the battle starts is old news.
+local function netEvent(seq, name, actor, E)
+	seq = tonumber(seq)
+	if not seq or seq == C.netEventSeq then return end
+	local first = C.netEventSeq == nil
+	C.netEventSeq = seq
+	if first or not name or name == "-" then return end
+	C.netWrite("# shown: " .. name)
+	if name:sub(1, 8) == "refused_" then
+		local a = E.actorById and E.actorById(tonumber(actor))
+		if a then E.SpawnWorldText(a, "worldtext_speak_important", "coop_net_" .. name) end
+	elseif E.TutorialPopup then
+		E.TutorialPopup("coop_net_" .. name, true)
+	end
+end
+
 function C.netStatus(E)
 	local f = io.open(file(STATUS), "r")
 	if not f then return end
@@ -246,6 +288,11 @@ function C.netStatus(E)
 	f:close()
 	local role, conn, hostLeft, guestLeft = (line or ""):match("^(%a+) (%a+) (%d+) (%d+)")
 	if not role then return end
+	local seq, ev, evActor, follow, own = line:match("^%a+ %a+ %d+ %d+ (%d+) (%S+) (%-?%d+) ?(%-?%d*) ?(%-?%d*)")
+	if seq then netEvent(seq, ev, evActor, E) end
+	local h, g = tonumber(hostLeft), tonumber(guestLeft)
+	C.netCam = { player = E.player, mine = role == "host" and h or g, other = role == "host" and g or h,
+		follow = tonumber(follow) or -1, own = tonumber(own) or -1 }
 	if not C.netCleared then
 		C.netCleared = true
 		for _, n in ipairs(NET_COUNTERS) do E.RemoveCounter("coop_net_" .. n) end
@@ -265,7 +312,79 @@ function C.netStatus(E)
 	showCounter("turn", turn, E)
 end
 
+-- Camera (2026-11-28, the user's design; before, it jumped to every action of the other player): when the crew's turn
+-- starts, a pan to this player's first crewmate with action points; once this player's crew is out of them and the
+-- other player's still acts, after a short pause the camera follows the other player's crewmate (SetCameraTargetEntity:
+-- the game's own smooth follow; the status line says which: the one that acted last) until the turn is over. The
+-- host's AI on the guest (the guest's game runs no enemy turn simulator, which moves the camera at the host): the dll
+-- writes "<seq> <actor id>" to swh2_net_focus.txt per AI command, followed the same way. Returns true while a pan of
+-- ours is on (its camera sequence is not a mission cutscene). C.Enter resets it.
+local FOCUS = "swh2_net_focus.txt"
+local FOLLOW_AFTER = 75   -- frames after this player's crew is done
+C.focus = {}
+function C.netFocus(frameNo, E)
+	local F, S = C.focus, C.netCam
+	if frameNo % 6 == 0 then
+		local f = io.open(file(FOCUS), "r")
+		local line = f and f:read("*l")
+		if f then f:close() end
+		local seq, id = (line or ""):match("^(%d+) (%-?%d+)")
+		if not seq and F.seq == nil then F.seq = "none" end   -- no focus yet: the first one that comes is new
+		if seq and seq ~= F.seq then
+			local first = F.seq == nil
+			F.seq = seq
+			if not first then F.enemy = tonumber(id) end
+		end
+	end
+	if not S then return false end
+	local want
+	if not S.player then
+		want = F.enemy
+		F.doneAt = nil
+	else
+		F.enemy = nil
+		if S.mine > 0 then F.doneAt = nil
+		else
+			F.doneAt = F.doneAt or frameNo
+			if S.other > 0 and S.follow >= 0 and frameNo - F.doneAt >= FOLLOW_AFTER then want = S.follow end
+		end
+	end
+	if S.player and not F.wasPlayer then F.startAt = frameNo + 20 end
+	F.wasPlayer = S.player
+	if want ~= F.following then
+		local a = want and E.actorById(want)
+		if a then E.SetCameraTargetEntity(a); F.following = want
+		elseif F.following then E.ClearCameraTarget(); F.following = nil end
+	end
+	if F.startAt and frameNo >= F.startAt and not E.IsActionsOngoing() and not F.following then
+		F.startAt = nil
+		local a = S.mine > 0 and S.own >= 0 and E.actorById(S.own)
+		if a then
+			E.CameraPanToEntity(a)
+			F.panUntil = frameNo + 60
+		end
+	end
+	return F.panUntil ~= nil and frameNo < F.panUntil
+end
+
+-- Name tags: the owner's name over every crewmate all the time, in the owner's colour (entities.worldtexts.xml
+-- coop_tag_N: attached to the crewmate, no drift, fades after 12 s) — spawned again every 11 s. list = crew().
+C.tags = {}
+function C.netTags(list, frameNo, E)
+	local now = (os and os.time and os.time()) or math.floor(frameNo / 60)
+	for _, c in ipairs(list) do
+		local owner = C.owner(c.persona)
+		local id = tostring(c.actor)
+		local t = C.tags[id]
+		if owner and (not t or t.owner ~= owner or now - t.at >= 11 or now < t.at) then
+			E.SpawnWorldText(c.actor, "coop_tag_" .. owner, "coop_owner_" .. owner)
+			C.tags[id] = { owner = owner, at = now }
+		end
+	end
+end
+
 local CUTSCENE, cutscene = "swh2_net_cutscene.txt", nil
+
 function C.netCutscene(on, why)
 	if on == cutscene then return end
 	cutscene = on
@@ -290,11 +409,18 @@ local function pos(p)
 	return ok and s or tostring(p)
 end
 
--- One "state" line: every actor as id@x,y#health, sorted by id. actors = { {actor, position, health}, ... }.
+-- Facing as ">L" / ">R" (GetEntityDirection: Vector.Left / Vector.Right), "" when unreadable.
+local function side(d)
+	local ok, x = pcall(function() return d.x or d[1] end)
+	if not ok or type(x) ~= "number" then return "" end
+	return x < 0 and ">L" or ">R"
+end
+
+-- One "state" line: every actor as id@x,y#health>side, sorted by id. actors = { {actor, position, health}, ... }.
 function C.netState(actors)
 	if not C.netLog then return end
 	local parts = {}
-	for _, a in ipairs(actors) do parts[#parts + 1] = tostring(a[1]) .. "@" .. pos(a[2]) .. "#" .. tostring(a[3]) end
+	for _, a in ipairs(actors) do parts[#parts + 1] = tostring(a[1]) .. "@" .. pos(a[2]) .. "#" .. tostring(a[3]) .. side(a[4]) end
 	table.sort(parts, function(x, y)
 		local a, b = tonumber(x:match("^(%-?%d+)")), tonumber(y:match("^(%-?%d+)"))
 		if a and b and a ~= b then return a < b end

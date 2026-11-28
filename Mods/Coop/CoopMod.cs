@@ -31,12 +31,14 @@ public sealed partial class CoopMod : IModPlugin
 
         CoopInstall.AddDllLoader(ctx, DllPath, netplay: true);
         ctx.Lua.AddGlobalModule("coop", CoopInstall.CoopLua(2, [], crew.Personas, crew.Entities,
-            s.Bool("labelTurn"), s.Bool("labelSelect"), inputLock: false, netplay: true, ["all", "all", "all", "all"]));
+            s.Bool("labelTurn"), s.Bool("labelSelect"), inputLock: false, netplay: true, ["all", "all", "all", "all"], s.Bool("labelAlways")));
         int scripts = CoopInstall.HookMissions(ctx);
         CoopInstall.AddModifiers(ctx);
         AddStrings(ctx);
         AddCounters(ctx);
         AddPartySlotOwner(ctx);
+        AddPopups(ctx);
+        AddNameTags(ctx);
 
         ctx.Report.Section("Co-op (network)");
         ctx.Report.Line("Start a network game from the loader: select NE Co-op → Network game… (host or join, nickname).");
@@ -59,7 +61,14 @@ public sealed partial class CoopMod : IModPlugin
         "coop_net_host_waiting", "coop_net_host_connected", "coop_net_host_closed", "coop_net_host_failed", "coop_net_host_joining",
         "coop_net_guest_waiting", "coop_net_guest_connected", "coop_net_guest_closed", "coop_net_guest_failed",
         "coop_net_turn_both", "coop_net_turn_p1", "coop_net_turn_p2", "coop_net_turn_enemy",
+        "tutorial_coop_net_guest_left", "tutorial_coop_net_guest_left_page1", "tutorial_coop_net_guest_back", "tutorial_coop_net_guest_back_page1",
+        "tutorial_coop_net_guest_lost", "tutorial_coop_net_guest_lost_page1", "tutorial_coop_net_host_left", "tutorial_coop_net_host_left_page1",
+        "tutorial_coop_net_host_lost", "tutorial_coop_net_host_lost_page1",
+        "coop_net_refused_cell", "coop_net_refused_gone", "coop_net_refused_notyours", "coop_net_refused_bad",
     ];
+
+    /// <summary>Notifications in the game's popup window (the dll's events, coop.lua netEvent): tutorials_popup.xml.</summary>
+    static readonly string[] Popups = ["guest_left", "guest_back", "guest_lost", "host_left", "host_lost"];
 
     static void AddStrings(ModContext ctx)
     {
@@ -82,6 +91,20 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_turn_p1"] = "{1}'s move",
             ["coop_net_turn_p2"] = "{2}'s move",
             ["coop_net_turn_enemy"] = "Enemy turn",
+            ["tutorial_coop_net_guest_left"] = "{2} left the battle",
+            ["tutorial_coop_net_guest_left_page1"] = "{2} is in the main menu. {2}'s crewmates are yours until {2} comes back to the battle.",
+            ["tutorial_coop_net_guest_back"] = "{2} is back",
+            ["tutorial_coop_net_guest_back_page1"] = "{2} is in the battle again and controls their own crewmates.",
+            ["tutorial_coop_net_guest_lost"] = "Connection to {2} lost",
+            ["tutorial_coop_net_guest_lost_page1"] = "{2}'s game doesn't answer. {2}'s crewmates are yours; when {2} is back, they join the battle by themselves.",
+            ["tutorial_coop_net_host_left"] = "{1} left the battle",
+            ["tutorial_coop_net_host_left_page1"] = "The host is in the main menu. Your game goes to the main menu too; when {1} enters a battle again, you join it by yourself.",
+            ["tutorial_coop_net_host_lost"] = "Connection to {1} lost",
+            ["tutorial_coop_net_host_lost_page1"] = "The host's game doesn't answer. Your game goes to the main menu; when {1} is in a battle again, you join it by yourself.",
+            ["coop_net_refused_cell"] = "{1}'s crewmate is going there",
+            ["coop_net_refused_gone"] = "Not accepted by {1}",
+            ["coop_net_refused_notyours"] = "Not accepted by {1}",
+            ["coop_net_refused_bad"] = "Not accepted by {1}",
         };
         var ru = new Dictionary<string, string>
         {
@@ -102,6 +125,20 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_turn_p1"] = "Ходит: {1}",
             ["coop_net_turn_p2"] = "Ходит: {2}",
             ["coop_net_turn_enemy"] = "Ход врагов",
+            ["tutorial_coop_net_guest_left"] = "{2}: выход из боя",
+            ["tutorial_coop_net_guest_left_page1"] = "{2} в главном меню. Бойцы игрока {2} под твоим управлением, пока {2} не вернётся в бой.",
+            ["tutorial_coop_net_guest_back"] = "{2} снова в бою",
+            ["tutorial_coop_net_guest_back_page1"] = "{2} снова в бою и управляет своими бойцами.",
+            ["tutorial_coop_net_guest_lost"] = "Связь с {2} потеряна",
+            ["tutorial_coop_net_guest_lost_page1"] = "Игра {2} не отвечает. Бойцы игрока {2} под твоим управлением; когда связь вернётся, {2} сам(а) войдёт в бой.",
+            ["tutorial_coop_net_host_left"] = "{1}: выход из боя",
+            ["tutorial_coop_net_host_left_page1"] = "Хост в главном меню. Твоя игра тоже выйдет в главное меню; когда {1} снова войдёт в бой, ты присоединишься сам(а).",
+            ["tutorial_coop_net_host_lost"] = "Связь с {1} потеряна",
+            ["tutorial_coop_net_host_lost_page1"] = "Игра хоста не отвечает. Твоя игра выйдет в главное меню; когда {1} снова будет в бою, ты присоединишься сам(а).",
+            ["coop_net_refused_cell"] = "Туда уже идёт боец игрока {1}",
+            ["coop_net_refused_gone"] = "{1}: команда не принята",
+            ["coop_net_refused_notyours"] = "{1}: команда не принята",
+            ["coop_net_refused_bad"] = "{1}: команда не принята",
         };
         Dictionary<string, string> Full(Dictionary<string, string> t)
         {
@@ -127,7 +164,7 @@ public sealed partial class CoopMod : IModPlugin
         var xml = ctx.Content.ReadText(file);
         int at = xml.LastIndexOf(close, StringComparison.Ordinal);
         if (at < 0) throw new InvalidOperationException($"{file}: unexpected layout.");
-        var counters = "\t<!-- SWH2 Co-op: network status (text only) -->\r\n" + string.Concat(NameKeys.Where(k => k.StartsWith("coop_net_", StringComparison.Ordinal)).Select(k =>
+        var counters = "\t<!-- SWH2 Co-op: network status (text only) -->\r\n" + string.Concat(NameKeys.Where(k => k.StartsWith("coop_net_", StringComparison.Ordinal) && !k.StartsWith("coop_net_refused_", StringComparison.Ordinal)).Select(k =>
             $"\t<Counter Name=\"{k}\">\r\n" +
             "\t\t<PanelTemplate>counter_generic_template</PanelTemplate>\r\n" +
             $"\t\t<HeaderStringId>{k}</HeaderStringId>\r\n" +
@@ -140,6 +177,54 @@ public sealed partial class CoopMod : IModPlugin
             "\t</Counter>\r\n"));
         ctx.Content.WriteText(file, xml.Insert(at, counters), bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
     }
+
+    /// <summary>
+    /// The dll's notifications in the game's own popup window (TutorialPopup with force, so it shows every time): one
+    /// tutorial per event, one page, title tutorial_&lt;name&gt; (the game's rule), texts with the nicknames.
+    /// </summary>
+    static void AddPopups(ModContext ctx)
+    {
+        const string file = "Definitions/tutorials_popup.xml", close = "</Tutorials>";
+        var xml = ctx.Content.ReadText(file);
+        int at = xml.LastIndexOf(close, StringComparison.Ordinal);
+        if (at < 0) throw new InvalidOperationException($"{file}: unexpected layout.");
+        var popups = "\t<!-- SWH2 Co-op: network notifications -->\r\n" + string.Concat(Popups.Select(p =>
+            $"\t<Tutorial Name=\"coop_net_{p}\" Template=\"BASE\">\r\n" +
+            "\t\t<Optional>false</Optional>\r\n" +
+            $"\t\t<Page>\r\n\t\t\t<Text>tutorial_coop_net_{p}_page1</Text>\r\n\t\t</Page>\r\n" +
+            "\t</Tutorial>\r\n")) + "\r\n";
+        ctx.Content.WriteText(file, xml.Insert(at, popups), bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
+    }
+
+    /// <summary>Name tag colours (host, guest): bright versions of the portrait colours.</summary>
+    static readonly string[] TagColors = ["255,170,60,255", "90,195,255,255"];
+
+    /// <summary>
+    /// World texts for the name tags over the crewmates (coop.lua C.netTags): attached to the crewmate, no drift, in
+    /// the owner's colour, gone after 12 s (the Lua spawns them again every 11 s), hidden in cutscenes.
+    /// </summary>
+    static void AddNameTags(ModContext ctx)
+    {
+        const string file = "Definitions/entities.worldtexts.xml", close = "</EntityDefinitions>";
+        var xml = ctx.Content.ReadText(file);
+        int at = xml.LastIndexOf(close, StringComparison.Ordinal);
+        if (at < 0) throw new InvalidOperationException($"{file}: unexpected layout.");
+        var tags = "\t<!-- SWH2 Co-op: name tags over the crewmates (1 = host, 2 = guest) -->\r\n" + string.Concat(Enumerable.Range(1, 2).Select(i =>
+            $"\t<Entity Name=\"coop_tag_{i}\" Template=\"WORLDTEXT\">\r\n" +
+            "\t\t<WorldText>\r\n" +
+            "\t\t\t<AttachToEntity>true</AttachToEntity>\r\n" +
+            "\t\t\t<Velocity>0,0</Velocity>\r\n" +
+            $"\t\t\t<Color>{TagColors[i - 1]}</Color>\r\n" +
+            "\t\t\t<Scale Start=\"1\" Time=\"0\">1.1</Scale>\r\n" +
+            "\t\t\t<Fade Delay=\"12\">0.3</Fade>\r\n" +
+            "\t\t\t<SpawnDelay IgnoreWhenOver=\"0\">0</SpawnDelay>\r\n" +
+            "\t\t\t<Offset>0,-40</Offset>\r\n" +
+            "\t\t\t<HideInCutscenes>true</HideInCutscenes>\r\n" +
+            "\t\t</WorldText>\r\n" +
+            "\t</Entity>\r\n"));
+        ctx.Content.WriteText(file, xml.Insert(at, tags), bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
+    }
+
 
     /// <summary>Owner colours of the crew portraits at the bottom of the tactics HUD (player 1 = host, 2 = guest).</summary>
     static readonly string[] OwnerColors = ["255, 150, 40, 150", "60, 170, 255, 150"];

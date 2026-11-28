@@ -133,7 +133,10 @@ Co-op (network) — mod Coop, experimental
   - Easiest: the host goes into the battle first, then the guest joins and clicks Continue — it lands in the same
     battle. The host can't move until the guest is in. Next mission: the guest restarts and joins again.
   - Both need the same mods with the same settings: the guest's loader checks this with the host's game and
-    doesn't start if they differ. A broken connection comes back by itself; the guest's game goes on.
+    doesn't start if they differ (it says what differs). A broken connection comes back by itself; the guest's game goes on.
+  - Name tags in the owner's colour over the crewmates; when your crew is done, the camera follows the other player.
+    A player who leaves or loses the connection is shown in a game popup; the host then controls the guest's crew.
+  - When the other player aims, their crewmate raises the weapon and shows the sight line on your screen too.
 
 Remote Play Coop — mod RemoteCoop (can't be on together with Coop)
   - Play missions with 2–4 friends: the host runs the game and shares it over Parsec (parsec.app, free);

@@ -67,6 +67,7 @@ public static class NetTest
             File.Copy(RecordLog, ReplayLog, true);
             lines.Add("Record copied to swh2_net_replay.log.");
         }
+        Guard(account, slot, lines);
         var auto = account.Load(StartBank, slot);
         lines.Add($"Test start put into slot {slot + 1}" + (auto != null ? $" (what was there is kept as bank \"{auto.Name}\")." : "."));
         Directory.CreateDirectory(Dir);
@@ -281,7 +282,7 @@ public static class NetTest
                 var lines = ReadShared(path).Split('\n');
                 int Count(string prefix) => lines.Count(l => l.StartsWith(prefix, StringComparison.Ordinal));
                 sb.AppendLine($"{who}: {Count("cmd ")} commands, {Count("end ")} turn ends, {Count("# DIFF")} DIFF lines, {Count("# ERROR")} errors" +
-                              (who == "Guest" ? $", {Count("fix ")} corrections ({lines.Count(l => l.StartsWith("fix ", StringComparison.Ordinal) && !l.Contains("moved=0 health=0 killed=0 missing=0"))} changed something)." : "."));
+                              (who == "Guest" ? $", {Count("fix ")} corrections ({lines.Count(l => l.StartsWith("fix ", StringComparison.Ordinal) && FixChanged.IsMatch(l))} changed something)." : "."));
                 if (guestPlays && who == "Host")
                     sb.AppendLine($"Host: {lines.Count(l => l.StartsWith("cmd ", StringComparison.Ordinal) && l.Contains(" by=guest"))} commands and " +
                                   $"{lines.Count(l => l.StartsWith("end ", StringComparison.Ordinal) && l.Contains(" by=guest"))} turn ends played for the guest, " +
@@ -396,6 +397,24 @@ public static class NetTest
         return text;
     }
 
+    /// <summary>
+    /// The player's own slots are banked before a run ("nettest guard slot N &lt;time of the slot file&gt;", a new bank only when
+    /// the slot changed since): on 2026-11-28 Steam Cloud's "cloud or local?" question at the host's start brought back a
+    /// settings.xml with the player's slot 3 as the last one — the autopilot's Continue loaded it and the test played and
+    /// saved over it.
+    /// </summary>
+    static void Guard(SaveBanks account, int testSlot, List<string> lines)
+    {
+        for (int i = 0; i < 64; i++)
+        {
+            if (i == testSlot || !File.Exists(account.SlotPath(i))) continue;
+            string name = $"nettest guard slot {i + 1} {File.GetLastWriteTime(account.SlotPath(i)):yyyy-MM-dd HH-mm-ss}";
+            if (account.Find(name) != null) continue;
+            try { account.Store(i, name); lines.Add($"Slot {i + 1} kept as bank \"{name}\" (in case the test loads it)."); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { lines.Add($"WARNING: slot {i + 1} could not be banked: {ex.Message}"); }
+        }
+    }
+
     static void PutBack(SaveBanks? account, string? text)
     {
         if (account != null && text != null) File.WriteAllText(Path.Combine(Path.GetDirectoryName(account.SaveDir)!, "settings.xml"), text);
@@ -446,7 +465,7 @@ public static class NetTest
         var lines = ReadShared(outLog).Split('\n');
         int Count(string prefix) => lines.Count(l => l.StartsWith(prefix, StringComparison.Ordinal));
         sb.AppendLine($"Log: {Count("cmd ")} commands, {Count("end ")} turn ends, {Count("state ")} states, {Count("# DIFF")} DIFF lines, " +
-                      $"{Count("fix ")} corrections ({lines.Where(l => l.StartsWith("fix ", StringComparison.Ordinal) && !l.Contains("moved=0 health=0 killed=0 missing=0")).Count()} changed something), {Count("# ERROR")} errors.");
+                      $"{Count("fix ")} corrections ({lines.Where(l => l.StartsWith("fix ", StringComparison.Ordinal) && FixChanged.IsMatch(l)).Count()} changed something), {Count("# ERROR")} errors.");
         if (replay) sb.Append(Compare(out differs));
         else differs = false;
         return sb.ToString().TrimEnd();
@@ -496,7 +515,7 @@ public static class NetTest
 
     // ---- comparison (record vs replay) ------------------------------------------------------------
 
-    sealed record Checkpoint(int Line, string Kind, string Key, string? Sync, Dictionary<string, (string Pos, string Hp)>? State);
+    sealed record Checkpoint(int Line, string Kind, string Key, string? Sync, Dictionary<string, (string Pos, string Hp, string Side)>? State);
 
     static Dictionary<string, string> Fields(string line)
     {
@@ -522,7 +541,8 @@ public static class NetTest
         return new string(c);
     }
 
-    static readonly Regex StatePart = new(@"^(.*?)@(.*)#(.*)$");
+    static readonly Regex StatePart = new(@"^(.*?)@(.*)#([^>]*)(?:>(.*))?$");   // id@x,y#hp>L|R (facing since 2026-11-28)
+    static readonly Regex FixChanged = new(@"=[1-9]");
 
     /// <summary>
     /// Checkpoints in order: top-level commands (d=0), turn ends, turn starts, each with the state line just before it
@@ -533,7 +553,7 @@ public static class NetTest
     {
         var list = new List<Checkpoint>();
         var ord = new Dictionary<string, string>();
-        Dictionary<string, (string, string)>? state = null;
+        Dictionary<string, (string, string, string)>? state = null;
         int n = 0;
         string Name(string id) => ord.TryGetValue(id, out var o) ? "#" + o : id;
         foreach (var line in File.ReadLines(path, Encoding.GetEncoding(28591)))
@@ -548,7 +568,7 @@ public static class NetTest
             {
                 state = [];
                 foreach (var part in line.Substring(6).Split(' '))
-                    if (StatePart.Match(part) is { Success: true } m) state[Name(m.Groups[1].Value)] = (m.Groups[2].Value, m.Groups[3].Value);
+                    if (StatePart.Match(part) is { Success: true } m) state[Name(m.Groups[1].Value)] = (m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value);
             }
             else if (line.StartsWith("cmd ", StringComparison.Ordinal))
             {
@@ -578,7 +598,7 @@ public static class NetTest
         return list;
     }
 
-    static IEnumerable<string> StateDiff(Dictionary<string, (string Pos, string Hp)> a, Dictionary<string, (string Pos, string Hp)> b, double tol)
+    static IEnumerable<string> StateDiff(Dictionary<string, (string Pos, string Hp, string Side)> a, Dictionary<string, (string Pos, string Hp, string Side)> b, double tol)
     {
         foreach (var k in a.Keys.Union(b.Keys).OrderBy(k => k, StringComparer.Ordinal))
         {
@@ -588,6 +608,7 @@ public static class NetTest
                 continue;
             }
             if (x.Hp != y.Hp) yield return $"actor {k} health {x.Hp} vs {y.Hp}";
+            if (x.Side != "" && y.Side != "" && x.Side != y.Side) yield return $"actor {k} facing {x.Side} vs {y.Side}";
             if (Pos(x.Pos) is { } p && Pos(y.Pos) is { } q)
             {
                 double off = Math.Max(Math.Abs(p.X - q.X), Math.Abs(p.Y - q.Y));

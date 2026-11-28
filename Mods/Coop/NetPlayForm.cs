@@ -68,6 +68,9 @@ public sealed class NetPlayForm : Form
         Controls.Add(_out);
         Controls.Add(top);
 
+        // What was typed is kept for next time even without a start (closing the window).
+        FormClosing += (_, _) => { try { NetSession.Save(Current()); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } };
+
         Show(p.Host
             ? "Your addresses (give one to the other player):" + Environment.NewLine + string.Join(Environment.NewLine, NetSession.LocalAddresses().Select(a => "    " + a))
             : "The host starts their game first. Then enter the host's address and click Start the game: your loader gets the host's save, then starts your game.");

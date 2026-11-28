@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <!-- Input lock: the native dll the game loads itself (exe patch), built with the Visual Studio C++ tools. -->
-  <Target Name="BuildInputLock" AfterTargets="Build" Inputs="..\Coop\native\swh2coop.c;..\Coop\native\netplay.c;..\Coop\native\nettcp.c;..\Coop\native\netplay.h;..\Coop\native\exemap.c;..\Coop\native\map_gog.h;..\Coop\native\build.cmd" Outputs="$(OutDir)swh2coop.dll">
+  <Target Name="BuildInputLock" AfterTargets="Build" Inputs="..\Coop\native\swh2coop.c;..\Coop\native\netplay.c;..\Coop\native\nettcp.c;..\Coop\native\netplay.h;..\Coop\native\exemap.c;..\Coop\native\map_gog.h;..\Coop\native\build.cmd;..\Coop\native\srcid.ps1" Outputs="$(OutDir)swh2coop.dll">
     <Exec Command="&quot;$(MSBuildProjectDirectory)\..\Coop\native\build.cmd&quot; &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;" />
   </Target>
 

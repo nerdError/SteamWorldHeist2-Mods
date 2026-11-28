@@ -94,6 +94,8 @@ public static class NetSession
     /// <summary>Writes the session file and (optionally) starts the game. Returns what to tell the player.</summary>
     public static string Start(GameInstall game, Profile p, bool launch, string? dataDir = null)
     {
+        // Kept whatever happens next (a refused join kept nothing before: the player typed everything again).
+        if (dataDir == null) Save(p);
         if (game.IsRunning) throw new InvalidOperationException("The game is running: close it first (the network game is set up at game start).");
         if (!NetTest.InstalledWithNetTest(game))
             throw new InvalidOperationException("NE Co-op is not applied to this game: tick it in the loader and click Apply to game first.");
@@ -150,7 +152,7 @@ public static class NetSession
         }
         lines.Add($"name {name}");
         File.WriteAllLines(SessionFile(dir), lines, new UTF8Encoding(false));
-        if (dataDir == null) Save(p);   // --data: a test copy, not the player's profile
+        if (dataDir == null) Save(p);   // the cleaned name; --data: a test copy, not the player's profile
         sb.AppendLine(p.Host
             ? "Go into the battle first; then the guest joins (its loader gets your save from inside the battle) and lands in it. Until the guest is in, your crew waits."
             : "Both: the same save and the same mission; your game follows the host's.");
@@ -260,24 +262,39 @@ public static class NetSession
     public static string Fingerprint(GameInstall game)
     {
         var state = new GameFiles(game).State;
-        var paks = new StringBuilder();
-        // A pak no mod changed counts as "original": the Steam and GOG Game2.pak differ, yet play the same.
-        foreach (var pak in GameInstall.PakNames)
-            paks.Append(pak).Append('=').Append(state.InstalledHashes.TryGetValue(pak, out var h) ? h : "original").Append(';');
-        string dll = Path.Combine(game.ModsDir, "Coop", "swh2coop.dll");
+        // Per pak (the error then says which one differs). A pak no mod changed counts as "original": the Steam and GOG
+        // Game2.pak differ, yet play the same.
+        string data = string.Join(",", GameInstall.PakNames.Select(pak =>
+            pak + ":" + (state.InstalledHashes.TryGetValue(pak, out var h) ? Short(h) : "original")));
         string mods = state.InstalledHashes.Count > 0 && state.Description != null ? state.Description : "none";
         mods = new string(mods.Where(c => !char.IsControl(c)).ToArray());
         if (Encoding.UTF8.GetByteCount(mods) > 800) mods = mods.Substring(0, 300) + "…";
-        return $"dll={Short(File.Exists(dll) ? GameFiles.Hash(dll) : "none")} data={Short(Sha(paks.ToString()))} mods={mods}";
+        return $"dll={DllId(Path.Combine(game.ModsDir, "Coop", "swh2coop.dll"))} data={data} mods={mods}";
+    }
+
+    /// <summary>
+    /// The Coop dll's source id ("src:" + the hash of its sources that build.cmd compiles in as "SWH2COOP_SRC=..."):
+    /// two PCs that built the same sources with different compiler versions get different dll bytes, but the same id.
+    /// An older dll without it: "file:" + the file hash. "none" = no dll.
+    /// </summary>
+    public static string DllId(string dll)
+    {
+        if (!File.Exists(dll)) return "none";
+        var bytes = File.ReadAllBytes(dll);
+        var marker = Encoding.ASCII.GetBytes("SWH2COOP_SRC=");
+        for (int i = 0; i + marker.Length < bytes.Length; i++)
+        {
+            int k = 0;
+            while (k < marker.Length && bytes[i + k] == marker[k]) k++;
+            if (k < marker.Length) continue;
+            var id = new StringBuilder();
+            for (int j = i + k; j < bytes.Length && id.Length < 16 && bytes[j] != 0; j++) id.Append((char)bytes[j]);
+            if (id.Length > 0 && id.ToString() != "unknown") return "src:" + id;
+        }
+        return "file:" + Short(GameFiles.Hash(dll));
     }
 
     static string Short(string hash) => hash.Length > 12 ? hash.Substring(0, 12) : hash;
-
-    static string Sha(string text)
-    {
-        using var sha = System.Security.Cryptography.SHA256.Create();
-        return string.Concat(sha.ComputeHash(Encoding.UTF8.GetBytes(text)).Select(b => b.ToString("X2")));
-    }
 
     /// <summary>Throws with what differs when the host's game can't stay in sync with this one; else a line for the player.</summary>
     public static string CheckSameGame(GameInstall game, string hostInfo)
@@ -290,15 +307,43 @@ public static class NetSession
         }
         var host = Parse(hostInfo);
         var mine = Parse(Fingerprint(game));
-        string both = $"{Environment.NewLine}    host: {host.Mods}{Environment.NewLine}    you:  {mine.Mods}";
+        string nl = Environment.NewLine;
+        string both = $"{nl}  Mods, host: {host.Mods}{nl}  Mods, you:  {mine.Mods}";
         if (host.Dll != mine.Dll)
-            throw new InvalidOperationException("You and the host have different versions of NE Co-op: both install the same mod pack version, Apply, then try again." + both);
+        {
+            string why = host.Dll.StartsWith("src:") && mine.Dll.StartsWith("src:")
+                ? "the two Co-op dlls were built from different sources (different mod pack versions, or one of you changed / didn't rebuild it)"
+                : host.Dll == "none" || mine.Dll == "none"
+                    ? "one of you has no Co-op dll in Mods\\Coop (apply NE Co-op in the loader)"
+                    : "one of you has an older NE Co-op whose dll can't say its source version";
+            throw new InvalidOperationException($"NE Co-op differs between you and the host: {why}.{nl}" +
+                $"  Co-op dll, host: {host.Dll}{nl}  Co-op dll, you:  {mine.Dll}{both}{nl}" +
+                "Both install the same mod pack version (the same build), Apply, then try again.");
+        }
         if (host.Data != mine.Data)
-            throw new InvalidOperationException("Your game data differs from the host's — the battle would go out of sync. Both apply exactly the same mods " +
-                "with the same settings (Randomizer: the same seed), then try again. Installed mods:" + both);
+        {
+            var differs = DataParts(host.Data).Where(kv => DataParts(mine.Data).TryGetValue(kv.Key, out var v) ? v != kv.Value : true)
+                .Select(kv => $"{kv.Key} (host {kv.Value}, you {(DataParts(mine.Data).TryGetValue(kv.Key, out var v) ? v : "?")})").ToList();
+            throw new InvalidOperationException("Your game data differs from the host's — the battle would go out of sync." +
+                (differs.Count > 0 ? $" Different: {string.Join(", ", differs)}." : $"{nl}  data, host: {host.Data}{nl}  data, you:  {mine.Data}") +
+                $"{both}{nl}Both apply exactly the same mods with the same settings (Randomizer: the same seed), then try again.");
+        }
         if (host.Mods != mine.Mods)
             return "Warning: the game data matches the host's, but the mod lists differ (exe mods, e.g. Turbo or More Save Slots):" + both;
-        return "Same mods and game data as the host.";
+        return $"Same mods and game data as the host (Co-op dll {mine.Dll}).";
+    }
+
+    /// <summary>"Game.pak:ABC,Game2.pak:original" -> pak -> id; an older loader's single hash -> "paks" -> it.</summary>
+    static Dictionary<string, string> DataParts(string data)
+    {
+        var d = new Dictionary<string, string>();
+        foreach (var part in data.Split(','))
+        {
+            int c = part.LastIndexOf(':');
+            if (c > 0) d[part.Substring(0, c)] = part.Substring(c + 1);
+            else d["paks"] = part;
+        }
+        return d;
     }
 
     /// <summary>IPv4 addresses of the network adapters that are up (loopback excluded).</summary>

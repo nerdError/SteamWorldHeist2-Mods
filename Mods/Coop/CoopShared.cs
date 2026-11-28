@@ -119,7 +119,8 @@ public static class CoopInstall
 
     /// <summary>coop.lua with the install-time values filled in.</summary>
     public static string CoopLua(int players, IEnumerable<KeyValuePair<string, int>> manual, List<string> personas,
-        SortedDictionary<string, string> entities, bool labelTurn, bool labelSelect, bool inputLock, bool netplay, IEnumerable<string> devices) =>
+        SortedDictionary<string, string> entities, bool labelTurn, bool labelSelect, bool inputLock, bool netplay, IEnumerable<string> devices,
+        bool labelAlways = false) =>
         Resource("coop.lua")
             .Replace("{PLAYERS}", players.ToString())
             .Replace("{MANUAL}", string.Join(", ", manual.Select(kv => $"[\"{kv.Key}\"] = {kv.Value}")))
@@ -127,6 +128,8 @@ public static class CoopInstall
             .Replace("{ENTITIES}", string.Join(", ", entities.Select(kv => $"[\"{kv.Key}\"] = \"{kv.Value}\"")))
             .Replace("{LABEL_TURN}", labelTurn ? "true" : "false")
             .Replace("{LABEL_SELECT}", labelSelect ? "true" : "false")
+            .Replace("{LABEL_ALWAYS}", labelAlways ? "true" : "false")
+
             .Replace("{INPUT_LOCK}", inputLock ? "true" : "false")
             .Replace("{NET_TEST}", netplay ? "true" : "false")
             .Replace("{DEVICES}", string.Join(", ", devices.Select(d => $"\"{d}\"")));
