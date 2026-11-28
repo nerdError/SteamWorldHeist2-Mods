@@ -180,6 +180,8 @@ static void ReadCrew(void)
  * back or lost the connection, a text over the crewmate for a refused command (coop_net_<name>). */
 static wchar_t statusPath[MAX_PATH];
 static void *FindActor(void *sim, int id);
+static int IdOfOrdinal(int ordinal, int fallback);
+static int OwnerOf(int id);
 static int eventSeq, eventActor;
 static int otherActive = -1;   /* the other player's crewmate that acted last (the camera follows it: coop.lua C.netFocus) */
 static char eventName[32] = "-";
@@ -190,6 +192,22 @@ static void Notify(const char *name, int actor)
     strncpy(eventName, name, sizeof eventName - 1);
     eventActor = actor;
     NetLog("# notify %d: %s %d", eventSeq, name, actor);
+}
+
+/* ---- action points of the other player's crewmates (2026-11-28, laptop test 8) ----
+ * The player turn UI (PlayerTurnSimulator) takes a crewmate's action points ([actor + 0x90]) when its player gives a
+ * command; a command played from the network goes to RequestAction directly and costs nothing. So in each game the
+ * OTHER player's crewmates kept all their points: no turn end in a mission part without enemies (no end turn button),
+ * both players stood with nothing to do. Now the owner's game sends its crewmates' points whenever they change
+ * (host: "ap ao= v=" in its log, played by the guest after the entries that came before it; guest: "gap ao= v=" to
+ * the host, set at once) and the other game sets them. */
+static void ApSet(int ao, int v)
+{
+    int id = IdOfOrdinal(ao, -1);
+    void *a = id >= 0 && mainSim ? FindActor(mainSim, id) : NULL;
+    if (!a || OwnerOf(id) == me) return;
+    __try { *(int *)((char *)a + 0x90) = v; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { }
 }
 
 static int saveForGuest;   /* host: the guest left mid-battle: a save of this battle now (the one it comes back from) */
@@ -377,7 +395,7 @@ typedef void *(*CameraTarget_t)(void *camera, int kind, int id, void *a4, unsign
 static CameraTarget_t realCameraTarget;
 #define RVA_CameraTarget 0x575bc0
 
-static void *HookCameraTarget(void *camera, int kind, int id, void *a4, unsigned char a5, int mode, float time)
+static void *HookCameraTarget(void *camera, int kind, int id, void *a4, unsigned char a5, int camMode, float time)
 {
     if (me && OwnerOf(id) && !Mine(id))
     {
@@ -385,7 +403,7 @@ static void *HookCameraTarget(void *camera, int kind, int id, void *a4, unsigned
         if (!told) { told = 1; NetLog("# camera: the other player's crewmate %d not followed (first time)", id); }
         return NULL;
     }
-    return realCameraTarget(camera, kind, id, a4, a5, mode, time);
+    return realCameraTarget(camera, kind, id, a4, a5, camMode, time);
 }
 
 /* The skip button of the tactics HUD (0x1cfc20(ui) picks its mode [ui + 0x28]: 0 none, 1 cutscene, 2..4 skip actions
@@ -1438,7 +1456,7 @@ static CursorNode_t realCursorNode;
 #define RVA_CursorNode 0x5f9de0
 #define RVA_CursorOffset 0xea19d0   /* pointer to the tuning values; + 0xc44 / 0xc48 = the tile cursor's offset */
 #define MOVE_SEND_MS 60
-#define MOVE_OFF_MS 250
+#define MOVE_OFF_MS 1500   /* the marker stays a while after the pointer left the tile (user: it went too fast) */
 static int moveSentOrd = -1;
 static float moveSentX, moveSentY;
 static ULONGLONG moveSeenAt, moveSentAt;
@@ -1949,6 +1967,12 @@ static void HostPlay(void *sim, const char *line)
         }
         return;
     }
+    if (strncmp(line, "gap ", 4) == 0)
+    {
+        int gao, gv;
+        if (sscanf(line + 4, "ao=%d v=%d", &gao, &gv) == 2 && OwnerOf(IdOfOrdinal(gao, -1)) == 2) ApSet(gao, gv);
+        return;
+    }
     if (strcmp(line, "left") == 0)
     {
         /* The guest's player quit to the main menu (not a rejoin of its own). */
@@ -2340,6 +2364,36 @@ static void QuietReport(void *sim)
     NetLog("%s", text);
 }
 
+static struct { int ao, v, at; } apPend[32];
+static int apPendLen;
+
+static void ApWatch(void *sim)
+{
+    static int sent[64], scene = -1;
+    if (scene != scenesMade) { scene = scenesMade; for (int i = 0; i < 64; i++) sent[i] = -99; apPendLen = 0; }
+    for (int i = 0; i < crewLen && i < 64; i++)
+    {
+        if ((i % 2 == 0 ? 1 : 2) != me) continue;
+        void *a = FindActor(sim, crewIds[i]);
+        int ap = -99, ao = OrdinalOf(crewIds[i]);
+        if (!a || ao < 0) continue;
+        __try { ap = *(int *)((char *)a + 0x90); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { continue; }
+        if (ap == sent[i]) continue;
+        sent[i] = ap;
+        char line[48];
+        sprintf(line, "ap ao=%d v=%d", ao, ap);
+        if (me == 1) { if (hosting) NetLog("%s", line); }
+        else if (live) { char g[56]; sprintf(g, "g%s", line); NetTcpSend(g); }
+    }
+    /* guest: the host's values, once the entries before them are played here */
+    int k = 0;
+    for (int j = 0; j < apPendLen; j++)
+        if (scriptPos >= apPend[j].at) ApSet(apPend[j].ao, apPend[j].v);
+        else apPend[k++] = apPend[j];
+    apPendLen = k;
+}
+
 static void TurnWatch(void *sim)
 {
     static int quiet, endedFor = -1;
@@ -2437,6 +2491,7 @@ static ULONG_PTR HookSimUpdate(void *sim, void *arg)
         if (me && namesDirty && frame % 10 == 0) ApplyNames();
         if (me) WatchOther();
         if (hosting) { HostPump(sim); TurnWatch(sim); }
+        if (me && sim == mainSim) ApWatch(sim);
         Pump(sim);
         if (me && sim == mainSim) { AimWatch(); AimDraw(sim); MoveWatch(); MoveDraw(sim); }
 
@@ -2922,6 +2977,16 @@ static void ParseScriptLine(const char *line)
     if (strncmp(line, "move ", 5) == 0)
     {
         if (live) MoveFromLine(line + 5);   /* the host's move target */
+        return;
+    }
+    if (strncmp(line, "ap ", 3) == 0)
+    {
+        int pao, pv;   /* the host's crewmate's action points: set after what came before (ApWatch) */
+        if (live && apPendLen < 32 && sscanf(line + 3, "ao=%d v=%d", &pao, &pv) == 2)
+        {
+            apPend[apPendLen].ao = pao; apPend[apPendLen].v = pv; apPend[apPendLen].at = scriptLen;
+            apPendLen++;
+        }
         return;
     }
     if (strncmp(line, "hostleft", 8) == 0)

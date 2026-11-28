@@ -403,7 +403,7 @@ end
 
 -- The other player's move target: the dll writes swh2_net_move.txt "<seq> <actor id> <owner> <x> <y>" while that
 -- player points at a tile for its selected crewmate, "<seq> off" when not (netplay.c MoveDraw). Shown as an anchor
--- entity on that tile (coop_move_anchor: the game's pointer over it, seen on stand screenshots). A WORLDTEXT made by
+-- entity on that tile (coop_move_anchor_N: the game's move cursor sprite tinted in the owner's colour). A WORLDTEXT made by
 -- SpawnEntity was never drawn (2.6.0-2.6.2), nor one attached to the anchor by SpawnWorldText (only actors carry texts).
 -- E = { SpawnEntity, DestroyEntity, FindEntityWithName, Vector }.
 local MOVE, MARKER = "swh2_net_move.txt", "coop_move_marker"
@@ -421,7 +421,7 @@ function C.netMove(frameNo, E)
 	local owner, x, y = line:match("^%d+ %-?%d+ (%d) ([%-%d%.]+) ([%-%d%.]+)")
 	owner, x, y = tonumber(owner), tonumber(x), tonumber(y)
 	if not owner or owner < 1 or owner > 2 or not x or not y then return end
-	E.SpawnEntity("coop_move_anchor", E.Vector(x, y), E.Vector.Right, MARKER)
+	E.SpawnEntity("coop_move_anchor_" .. owner, E.Vector(x, y), E.Vector.Right, MARKER)
 	if not C.moveLogged then
 		C.moveLogged = true
 		C.log("move marker: first at " .. x .. "," .. y .. (E.FindEntityWithName(MARKER) and "" or " (anchor NOT found)"))

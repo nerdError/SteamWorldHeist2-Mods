@@ -260,7 +260,13 @@ public sealed partial class CoopMod : IModPlugin
             "\t\t\t<HideInCutscenes>true</HideInCutscenes>\r\n" +
             "\t\t</WorldText>\r\n" +
             "\t</Entity>\r\n")) +
-            "\t<Entity Name=\"coop_move_anchor\">\r\n\t\t<Position/>\r\n\t\t<PointOfInterest Definition=\"hunters_mark_inactive\"/>\r\n\t</Entity>\r\n";
+            // The marker itself: the game's own move cursor as a sprite on the tile — its walk one is orange (the host's
+            // name colour), its sprint one blue (the guest's), so no Tint (that multiplies: blue on orange came out green).
+            string.Concat(Enumerable.Range(1, 2).Select(i =>
+            $"\t<Entity Name=\"coop_move_anchor_{i}\">\r\n\t\t<Position/>\r\n\t\t<Texture>\r\n" +
+            $"\t\t\t<File>Textures/UI/Targeting/{(i == 1 ? "cursor_target" : "cursor_target_run")}</File>\r\n" +
+            "\t\t\t<Origin>0.5, 0.5</Origin>\r\n\t\t\t<Priority>100</Priority>\r\n" +
+            "\t\t</Texture>\r\n\t</Entity>\r\n"));
         ctx.Content.WriteText(file, xml.Insert(at, tags), bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
     }
 
