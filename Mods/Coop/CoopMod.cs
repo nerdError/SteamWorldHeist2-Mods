@@ -207,7 +207,7 @@ public sealed partial class CoopMod : IModPlugin
 
     /// <summary>
     /// World texts for the name tags over the crewmates (coop.lua C.netTags): attached to the crewmate, no drift, in
-    /// the owner's colour, gone after 12 s (the Lua spawns them again every 11 s), hidden in cutscenes.
+    /// the owner's colour, gone after 4 s (the Lua spawns them again every ~2.5 s), hidden in cutscenes.
     /// </summary>
     static void AddNameTags(ModContext ctx)
     {
@@ -222,7 +222,7 @@ public sealed partial class CoopMod : IModPlugin
             "\t\t\t<Velocity>0,0</Velocity>\r\n" +
             $"\t\t\t<Color>{TagColors[i - 1]}</Color>\r\n" +
             "\t\t\t<Scale Start=\"1\" Time=\"0\">1.1</Scale>\r\n" +
-            "\t\t\t<Fade Delay=\"12\">0.3</Fade>\r\n" +
+            "\t\t\t<Fade Delay=\"4\">0.25</Fade>\r\n" +
             "\t\t\t<SpawnDelay IgnoreWhenOver=\"0\">0</SpawnDelay>\r\n" +
             "\t\t\t<Offset>0,-40</Offset>\r\n" +
             "\t\t\t<HideInCutscenes>true</HideInCutscenes>\r\n" +

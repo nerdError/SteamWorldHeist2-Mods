@@ -464,6 +464,7 @@ static int __cdecl HookPollEvent(void *ev)
             int sc = *(int *)((char *)ev + 16);
             if (sc == 41) MenuKey(1);
             if (sc == 40 || sc == 44 || sc == 41) PopupKey();
+            if (sc == 65) SteamNetInviteDialog();   /* F8, host: the Steam overlay's invite dialog for the co-op lobby */
         }
         if (type == 0x401 && *((unsigned char *)ev + 16) == 1) PopupKey();   /* SDL_MouseButtonEvent.button 1 = left */
         if (allowed == DEV_ALL || menu) return r;

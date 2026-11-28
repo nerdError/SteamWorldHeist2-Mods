@@ -312,15 +312,15 @@ function C.netStatus(E)
 	showCounter("turn", turn, E)
 end
 
--- Camera (2026-11-28, the user's design; before, it jumped to every action of the other player): when the crew's turn
--- starts, a pan to this player's first crewmate with action points; once this player's crew is out of them and the
--- other player's still acts, after a short pause the camera follows the other player's crewmate (SetCameraTargetEntity:
--- the game's own smooth follow; the status line says which: the one that acted last) until the turn is over. The
--- host's AI on the guest (the guest's game runs no enemy turn simulator, which moves the camera at the host): the dll
--- writes "<seq> <actor id>" to swh2_net_focus.txt per AI command, followed the same way. Returns true while a pan of
--- ours is on (its camera sequence is not a mission cutscene). C.Enter resets it.
+-- Camera (2026-11-28, laptop test 5, the user's call): the game's own camera, plus one pan when the crew's turn starts
+-- to this player's first crewmate with action points. No more following the other player's crewmate (it held the
+-- camera so it couldn't be moved, and came while this player still had an action). The host's AI on the guest (the
+-- guest's game runs no enemy turn simulator, which moves the camera at the host): the dll writes "<seq> <actor id>"
+-- to swh2_net_focus.txt per AI command, panned to the same way. The pans are made like the game's own (no letterbox:
+-- the dll's CameraPan hook knows them by the hold time PAN_HOLD). Returns true while a pan of ours is on (its camera
+-- sequence is not a mission cutscene). C.Enter resets it.
 local FOCUS = "swh2_net_focus.txt"
-local FOLLOW_AFTER = 75   -- frames after this player's crew is done
+local PAN_HOLD = 0.3071   -- = COOP_PAN_HOLD in netplay.c
 C.focus = {}
 function C.netFocus(frameNo, E)
 	local F, S = C.focus, C.netCam
@@ -337,40 +337,30 @@ function C.netFocus(frameNo, E)
 		end
 	end
 	if not S then return false end
-	local want
-	if not S.player then
-		want = F.enemy
-		F.doneAt = nil
-	else
+	local function pan(a)
+		E.CameraPanToEntity(a, PAN_HOLD)
+		F.panUntil = frameNo + 60
+	end
+	if S.player then F.enemy = nil
+	elseif F.enemy then
+		local a = E.actorById(F.enemy)
 		F.enemy = nil
-		if S.mine > 0 then F.doneAt = nil
-		else
-			F.doneAt = F.doneAt or frameNo
-			if S.other > 0 and S.follow >= 0 and frameNo - F.doneAt >= FOLLOW_AFTER then want = S.follow end
-		end
+		if a then pan(a) end
 	end
 	if S.player and not F.wasPlayer then F.startAt = frameNo + 20 end
 	F.wasPlayer = S.player
-	if want ~= F.following then
-		local a = want and E.actorById(want)
-		if a then E.SetCameraTargetEntity(a); F.following = want
-		elseif F.following then E.ClearCameraTarget(); F.following = nil end
-	end
-	if F.startAt and frameNo >= F.startAt and not E.IsActionsOngoing() and not F.following then
+	if F.startAt and frameNo >= F.startAt and not E.IsActionsOngoing() then
 		F.startAt = nil
 		local a = S.mine > 0 and S.own >= 0 and E.actorById(S.own)
-		if a then
-			E.CameraPanToEntity(a)
-			F.panUntil = frameNo + 60
-		end
+		if a then pan(a) end
 	end
-	-- Following counts too: SetCameraTargetEntity keeps IsCameraSequenceActive true until ClearCameraTarget — the guest
-	-- took it for a mission cutscene and replayed nothing more (2026-11-28, laptop test 4: the host's Wait never came).
-	return F.following ~= nil or (F.panUntil ~= nil and frameNo < F.panUntil)
+	return F.panUntil ~= nil and frameNo < F.panUntil
 end
 
 -- Name tags: the owner's name over every crewmate all the time, in the owner's colour (entities.worldtexts.xml
--- coop_tag_N: attached to the crewmate, no drift, fades after 12 s) — spawned again every 11 s. list = crew().
+-- coop_tag_N: attached to the crewmate, no drift, fades after 4 s) — spawned again every ~2.5 s (150 frames, or 3 s
+-- of clock at a low frame rate). Short-lived (was 12 s): a tag that fell behind its crewmate is soon replaced, and a
+-- dead crewmate's (no longer in the list) is gone within seconds (2026-11-28, laptop test 5). list = crew().
 C.tags = {}
 function C.netTags(list, frameNo, E)
 	local now = (os and os.time and os.time()) or math.floor(frameNo / 60)
@@ -378,9 +368,9 @@ function C.netTags(list, frameNo, E)
 		local owner = C.owner(c.persona)
 		local id = tostring(c.actor)
 		local t = C.tags[id]
-		if owner and (not t or t.owner ~= owner or now - t.at >= 11 or now < t.at) then
+		if owner and (not t or t.owner ~= owner or frameNo - t.frame >= 150 or frameNo < t.frame or now - t.at >= 3 or now < t.at) then
 			E.SpawnWorldText(c.actor, "coop_tag_" .. owner, "coop_owner_" .. owner)
-			C.tags[id] = { owner = owner, at = now }
+			C.tags[id] = { owner = owner, at = now, frame = frameNo }
 		end
 	end
 end
@@ -393,6 +383,22 @@ function C.netCutscene(on, why)
 	C.netWrite("# cutscene " .. (on and "on" or "off") .. (why and (" (" .. why .. ")") or ""))
 	local f = io.open(file(CUTSCENE), "w")
 	if f then f:write(on and ("1 " .. (why or "")) or "0", "\n"); f:close() end
+end
+
+-- Guest: the host won the battle (the dll writes swh2_net_won.txt "1" once this game has played everything before
+-- the host's win): ended here too, with this game's own victory screen. A guest whose mission script didn't end it
+-- went into an enemy turn no one plays and froze (2026-11-28, laptop test 5). E = { EndMissionInVictory }.
+local WON = "swh2_net_won.txt"
+function C.netWon(frameNo, E)
+	if frameNo % 15 ~= 0 then return end
+	local f = io.open(file(WON), "r")
+	if not f then return end
+	local v = f:read("*l")
+	f:close()
+	if v ~= "1" then return end
+	if os and os.remove then os.remove(file(WON)) end
+	C.netWrite("# the host won: this mission ends in victory too")
+	E.EndMissionInVictory(1.0)
 end
 
 local function num(v)

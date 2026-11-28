@@ -348,6 +348,35 @@ static unsigned char HookCanSelect(void *pts, int id)
     return realCanSelect(pts, id);
 }
 
+/* Camera pans of the mission Lua (coop.lua C.netFocus): CameraPanToEntity builds a CameraPan sequence
+ * 0x120990(seq, position *, float hold, bool cinematic, uint16 mode) with cinematic = 1 = flags 0x13 (letterbox bars
+ * for a second, skippable); the game's own pans (new enemies) pass 0 = flags 1. Ours are told apart by their hold
+ * time COOP_PAN_HOLD and made like the game's (2026-11-28: the user saw the bars flash at every pan). */
+typedef void *(*CameraPan_t)(void *seq, void *pos, float hold, unsigned char cinematic, unsigned short mode);
+static CameraPan_t realCameraPan;
+#define RVA_CameraPan 0x120990
+#define COOP_PAN_HOLD 0.3071f
+
+static void *HookCameraPan(void *pan, void *pos, float hold, unsigned char cinematic, unsigned short panMode)
+{
+    if (fabsf(hold - COOP_PAN_HOLD) < 0.0001f) cinematic = 0;
+    return realCameraPan(pan, pos, hold, cinematic, panMode);
+}
+
+/* The skip button of the tactics HUD (0x1cfc20(ui) picks its mode [ui + 0x28]: 0 none, 1 cutscene, 2..4 skip actions
+ * "ui_tactics_skip_actions" — moves and shots jump to their end). Skipped actions end at once in one game only: in a
+ * network game modes 2..4 become 0 (no button); a cutscene is each player's own and stays skippable. */
+typedef void (*SkipMode_t)(void *ui);
+static SkipMode_t realSkipMode;
+#define RVA_SkipMode 0x1cfc20
+
+static void HookSkipMode(void *ui)
+{
+    realSkipMode(ui);
+    __try { int *m = (int *)((char *)ui + 0x28); if (me && *m >= 2) *m = 0; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { }
+}
+
 /* ---- replay script ---- */
 typedef struct
 {
@@ -457,6 +486,11 @@ static SceneCreate_t realSceneCreate;
 static unsigned sceneZ[16], sceneW[16];
 static int scenesLen, scenePos;
 #define RVA_SceneCreate 0x488bb0
+/* Guest: the host's "won" line came (script length then, -1 = not), when, and whether the mission Lua was told
+ * (swh2_net_won.txt "1": it ends the mission in victory, coop.lua C.netWon). Reset with every scene. */
+static int hostWon = -1, wonTold;
+static ULONGLONG hostWonAt;
+static wchar_t wonPath[MAX_PATH];
 
 /* Actor ordinals: entity ids drift between runs (special effects take numbers from the same counter), so actors are
  * named by the order they first appear in the actor list — the same on every PC that plays the same battle.
@@ -836,7 +870,8 @@ typedef void (*AnimInput_t)(void *unused, void *anim, void *view, unsigned char 
 #define RVA_TraceAim 0x377290
 #define RVA_PtrReset 0x18d8f0
 #define RVA_AnimInput 0x565890
-#define AIM_SEND_MS 66
+#define AIM_SEND_MS 40   /* 25 a second (~1.5 KB/s); the other game glides between them (AIM_GLIDE) */
+#define AIM_GLIDE 0.3f   /* share of the way to the last received angle the shown one goes per frame */
 #define AIM_OFF_MS 200
 
 static AimUpdate_t realAimUpdate;
@@ -889,7 +924,7 @@ static void AnimAim(void *sim, int id, int on)
     if (anim) ((AnimInput_t)atAnimInput)(NULL, anim, &v, (unsigned char)on);
 }
 
-typedef struct { int id, index, show, valid, active, drawn, traced, redo; float a, b, drawnA; } RemoteAim;
+typedef struct { int id, index, show, valid, active, drawn, traced, redo; float a, b, drawnA, da, db; } RemoteAim;   /* da/db: shown */
 static RemoteAim aims[8];
 /* A part of the remote aim that faulted is off for the rest of the game, the others go on (2026-11-28, laptop: the
  * first try faulted somewhere and took the whole aim down, the host's own aim was then not sent either). */
@@ -984,13 +1019,22 @@ static void AimDraw(void *sim)
         if (!actor) { memset(r, 0, sizeof *r); continue; }
         if (r->redo) { r->redo = 0; AimUndraw(sim, r); }
         if (!r->active || !quiet || (r->traced && !r->show)) { AimUndraw(sim, r); continue; }
-        if (r->drawn && r->a == r->drawnA) continue;
+        /* The angles come 25 times a second: shown as they are, the aim moved in steps (2026-11-28, laptop test 5). */
+        if (!r->drawn) { r->da = r->a; r->db = r->b; }
+        else
+        {
+            r->da += (r->a - r->da) * AIM_GLIDE;
+            r->db += (r->b - r->db) * AIM_GLIDE;
+            if (fabsf(r->a - r->da) < 0.0005f) r->da = r->a;
+            if (fabsf(r->b - r->db) < 0.0005f) r->db = r->b;
+        }
+        if (r->drawn && r->da == r->drawnA) continue;
         char *ac = (char *)actor;
         int stage = 0;
         __try
         {
-            *(float *)(ac + 0xe0) = r->a;
-            *(float *)(ac + 0xe4) = r->b;
+            *(float *)(ac + 0xe0) = r->da;
+            *(float *)(ac + 0xe4) = r->db;
             stage = 1;
             if (!r->drawn && !aimAnimOff) AnimAim(sim, r->id, 1);
         }
@@ -1001,7 +1045,7 @@ static void AimDraw(void *sim)
             NetLog("# ERROR: the other player's aim pose (%d) could not be shown: poses off", r->id);
         }
         r->drawn = 1;
-        r->drawnA = r->a;
+        r->drawnA = r->da;
         if (!r->show || aimTraceOff) continue;
         stage = 0;
         __try
@@ -1904,10 +1948,29 @@ static int saveAfterCheckpoint;         /* host: 1 = a checkpoint was loaded, 2 
 static ULONGLONG checkpointSceneAt;     /* host: when that scene was made */
 static long long needFrom;              /* guest: the host's save must be from this host log byte on (0: any) */
 
+/* Guest: the host won: tell the mission Lua once everything before the "won" line is played here and the world is
+ * quiet — or after 10 s anyway, or at once when the host is in its next scene already (this replay is over). */
+static void FollowVictory(void *sim, int movedOn)
+{
+    if (hostWon < 0 || wonTold) return;
+    if (!movedOn && GetTickCount64() - hostWonAt < 10000 && (scriptPos < hostWon || Busy(sim))) return;
+    wonTold = 1;
+    FILE *f = _wfopen(wonPath, L"w");
+    if (f) { fputs("1\n", f); fclose(f); }
+    NetLog("# the host won the battle: this game ends it in victory too (replayed %d of %d entries before the host's win)", scriptPos, hostWon);
+}
+
+/* Guest: the host is in a scene this game hasn't made (its next mission, the world map). */
+static int HostMovedOn(void)
+{
+    return live && scenePos >= 0 && scenePos < scenesLen && sceneAt[scenePos] <= scriptPos;
+}
+
 static void Pump(void *sim)
 {
     if (mode != NET_REPLAY || HELD()) return;
     if (live) ReadMore();   /* every frame: each one skipped is lag on the other player's actions (was every 4th) */
+    FollowVictory(sim, HostMovedOn());
     while (earlyEnds && scriptPos < scriptLen && script[scriptPos].kind == 'e')
     {
         earlyEnds--;
@@ -1921,7 +1984,7 @@ static void Pump(void *sim)
     }
     /* The host is in a scene this game hasn't made (its next mission, or the world map): what follows belongs there,
      * not to this battle (a guest on its results screen played the host's next mission into its old one). */
-    if (live && scenePos >= 0 && scenePos < scenesLen && sceneAt[scenePos] <= scriptPos)
+    if (HostMovedOn())
     {
         static int toldAt = -1;
         if (toldAt != scriptPos)
@@ -2181,7 +2244,9 @@ static ULONG_PTR HookSimUpdate(void *sim, void *arg)
         ScanActors(sim);
         /* Again every ~5 s: the host may load the mission after this game did (its new mission resets the wait). */
         static unsigned readyAt;
-        if (me == 2 && NetTcpState() == NET_TCP_CONNECTED && (readySentFor != NetTcpReconnects() + 1 || frame - readyAt >= 300) && NetTcpSend("ready"))
+        /* Not from a battle the host has left: a guest frozen in its old mission said "ready" for the host's next one,
+         * which then ran as if the guest were in (2026-11-28, laptop test 5). */
+        if (me == 2 && NetTcpState() == NET_TCP_CONNECTED && !HostMovedOn() && (readySentFor != NetTcpReconnects() + 1 || frame - readyAt >= 300) && NetTcpSend("ready"))
         {
             if (readySentFor != NetTcpReconnects() + 1) NetLog("# to host: ready (this game is in the battle)");
             readySentFor = NetTcpReconnects() + 1;
@@ -2505,6 +2570,9 @@ static void *HookSceneCreate(void *scene, void *a2, void *a3, void *a4)
     if (hosting && guestIn) { guestIn = 0; NetLog(guestAway ? "# new mission: the guest is away, not waited for" : "# new mission: waiting for the guest to enter the battle"); }
     readySentFor = 0;
     userLeft = 0;
+    hostWon = -1;
+    wonTold = 0;
+    DeleteFileW(wonPath);
     destsLen = 0;
     scenesMade++;
     if (hosting && saveAfterCheckpoint == 1) { saveAfterCheckpoint = 2; checkpointSceneAt = GetTickCount64(); }
@@ -2672,6 +2740,14 @@ static void ParseScriptLine(const char *line)
     {
         /* The host quit its battle to the main menu: this battle is over too (HookSimUpdate goes to the menu). */
         hostLeftAt = GetTickCount64();
+        return;
+    }
+    if (strncmp(line, "won", 3) == 0 && (!line[3] || line[3] == '\r' || line[3] == '\n'))
+    {
+        /* The host's battle is won (its mission Lua, OnMissionVictory): this one is won too once it has played what
+         * came before (FollowVictory) — a guest whose own mission script didn't end it went into an enemy turn no one
+         * plays and froze there (2026-11-28, laptop test 5). */
+        if (hostWon < 0) { hostWon = scriptLen; hostWonAt = GetTickCount64(); }
         return;
     }
     int o = NetParseLine(line, &tmp);
@@ -3551,6 +3627,8 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     DeleteFileW(statusPath);
     _snwprintf(focusPath, MAX_PATH, L"%s\\swh2_net_focus.txt", dir);
     DeleteFileW(focusPath);
+    _snwprintf(wonPath, MAX_PATH, L"%s\\swh2_net_won.txt", dir);
+    DeleteFileW(wonPath);
 
     if (hostPort > 0)
         NetLog(NetTcpHost(bindAddr, hostPort, outPath) ? "# host: guests connect to %s port %d" : "# ERROR: host on %s port %d not started",
@@ -3568,6 +3646,12 @@ void NetInstall(char *exeBase, const wchar_t *dir)
         static const unsigned char canSelect[] = { 0x48,0x89,0x5c,0x24,0x18,0x56,0x48,0x83,0xec,0x20,0x48,0x8b,0xf1,0x8b,0xda };
         realCanSelect = (CanSelect_t)InlineHook(RVA_CanSelect, canSelect, sizeof canSelect, (void *)HookCanSelect);
         NetLog(realCanSelect ? "# %s: only the own crew can be selected" : "# ERROR: %s: selection hook not installed", me == 1 ? "host" : "guest");
+        static const unsigned char cameraPan[] = { 0x48,0x89,0x4c,0x24,0x08,0x48,0x83,0xec,0x48,0x48,0xc7,0x04,0x24,0xfe,0xff,0xff,0xff };
+        realCameraPan = (CameraPan_t)InlineHook(RVA_CameraPan, cameraPan, sizeof cameraPan, (void *)HookCameraPan);
+        if (!realCameraPan) NetLog("# ERROR: camera pan hook not installed: the co-op camera pans show the letterbox");
+        static const unsigned char skipMode[] = { 0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57,0x48,0x83,0xec,0x20 };
+        realSkipMode = (SkipMode_t)InlineHook(RVA_SkipMode, skipMode, sizeof skipMode, (void *)HookSkipMode);
+        NetLog(realSkipMode ? "# skipping actions off (the skip button would end them in one game only)" : "# ERROR: skip button hook not installed");
         static const unsigned char slotUpdate[] = { 0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x7c,0x24,0x10,0x55,0x48,0x8b,0xec,0x48,0x83,0xec,0x50 };
         DWORD findChild = ExeRva(RVA_FindChild);
         if (findChild) atFindChild = base + findChild;

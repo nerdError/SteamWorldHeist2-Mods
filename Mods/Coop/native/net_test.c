@@ -441,7 +441,11 @@ int main(void)
         CHECK(traceMakes == 1 && traceAims == 1);   /* same angle: nothing to do */
         AimFromLine("ao=0 i=1 a=0.75 b=0.25 s=1 v=1");
         AimDraw(sim3);
-        CHECK(*(float *)(actor41 + 0xe0) == 0.75f && traceMakes == 2 && traceAims == 2 && lastValid == 1 && animOn == 1);   /* the game gives back the line it has */
+        /* glides: a share of the way per frame, the line follows each step */
+        CHECK(*(float *)(actor41 + 0xe0) > 0.5f && *(float *)(actor41 + 0xe0) < 0.75f && traceMakes == 2 && traceAims == 2 && lastValid == 1 && animOn == 1);
+        for (int k = 0; k < 40; k++) AimDraw(sim3);
+        CHECK(*(float *)(actor41 + 0xe0) == 0.75f && traceAims > 2 && traceAims < 40);   /* there, then nothing more to do */
+        traceMakes = 2;
         scriptLen = 1;   /* the host's earlier commands not played yet: not shown meanwhile */
         AimDraw(sim3);
         CHECK(ptrResets == 1 && animOff == 1 && *(void **)(actor41 + 0xf8) == NULL);
