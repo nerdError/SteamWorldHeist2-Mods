@@ -238,6 +238,7 @@ static unsigned char __cdecl HookGetButton(void *gc, int button)
 {
     unsigned char v = realGetButton(gc, button);
     if (button == autoPadButton && GetTickCount64() < autoPadUntil) v = 1;
+    if (NetBlockInput()) return 0;
     int menu = MenuMode();            /* the press that closes a menu / popup still reaches it */
     if (button == 6 || button == 1 || button == 0)   /* START, B, A: rising edges per pad drive menu / popup mode */
     {
@@ -452,6 +453,9 @@ static int __cdecl HookPollEvent(void *ev)
         if (!r || !ev) return r;
         Refresh();
         unsigned type = *(unsigned *)ev;
+        /* The guest's game presses Continue by itself in a moment: the player's clicks must not land in the menu. */
+        if (NetBlockInput() && ((type >= 0x300 && type <= 0x303) || (type >= 0x401 && type <= 0x403) ||
+                                (type >= 0x600 && type <= 0x604) || (type >= 0x650 && type <= 0x652))) continue;
         /* Test runs need no mouse, and the player's real one must not steer them: hovering the window put the title
          * menu cursor on Options, and the autopilot's Return opened the settings (the run hung there). The game takes
          * the pointer position only from these events (SDL_GetMouseState is read for the buttons alone). */
@@ -503,6 +507,7 @@ static const unsigned char *__cdecl HookGetKeyboardState(int *numkeys)
     const unsigned char *keys = realGetKeyboardState(numkeys);
     Refresh();
     int held = autoPhase == 2 && autoKeySc > 0 && autoKeySc < NUM_SCANCODES;   /* autopilot key: also in the key state */
+    if (keys && NetBlockInput() && !held) { memset(keyCopy, 0, sizeof keyCopy); return keyCopy; }
     if (!keys || (Allowed(DEV_KBM) && !held)) return keys;
     for (int i = 0; i < NUM_SCANCODES; i++) keyCopy[i] = Allowed(DEV_KBM) || AlwaysKey(i) ? keys[i] : 0;
     if (held) keyCopy[autoKeySc] = 1;
@@ -514,6 +519,7 @@ static unsigned int __cdecl HookGetMouseState(int *x, int *y)
     int rx, ry;
     unsigned int buttons = realGetMouseState(&rx, &ry);
     Refresh();
+    if (NetBlockInput()) buttons = 0;
     if (Allowed(DEV_KBM)) { lastMouseX = rx; lastMouseY = ry; }
     else buttons = 0;
     if (x) *x = Allowed(DEV_KBM) ? rx : lastMouseX;

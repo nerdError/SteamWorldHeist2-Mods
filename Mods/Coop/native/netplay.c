@@ -196,6 +196,8 @@ static void Notify(const char *name, int actor)
  * is back ("ready" from its battle again), and a new battle doesn't wait for it. */
 static int guestAway;
 static int userLeft;   /* guest: its player quit the battle (HookQuit): no Continue pressed by itself */
+static ULONGLONG inputBlockUntil;   /* guest: the player's keys / mouse / pad go nowhere until then (Continue by itself) */
+int NetBlockInput(void) { return inputBlockUntil && GetTickCount64() < inputBlockUntil; }
 static int loaderSlot;   /* guest: the loader put the host's save into slot guestSlotPath (session "slot"): Continue at start */
 static ULONGLONG hostLeftAt;   /* live guest: when the host's "hostleft" line came (0 = not) */
 
@@ -1405,7 +1407,8 @@ static void HookPtsWait(void *pts)
 /* ---- the other player's move target (2026-11-28, the user's wish after the aim) ----
  * The tactics UI (0x5fe970) shows the tile under the pointer with 0x5f9de0(cursor, node, -, -) every frame while a
  * crewmate is selected ([ui + 0x1b0] = hovered nav node, -1 none): node i is entry i (0x48 bytes) of the vector at
- * [game + 0x1cc8] ([cursor] = game), its position (2 floats) at + 0x24. The own one goes to the other player as
+ * [[game + 0x1cc8]] ([cursor] = game; [game + 0x1cc8] points to the vector — 2.6.0 read it as the vector and sent
+ * junk 0.0,0.1), its position (2 floats) at + 0x24, plus [[0xea19d0] + 0xc44 / 0xc48] as the game's cursor. The own one goes to the other player as
  * "move ao=<n> x=<x> y=<y>" (host: in its log; guest: "gmove ..." to the host, played at once, not logged) when the
  * tile changes, "move ao=<n> off" 250 ms after the cursor is gone. The other game writes swh2_net_move.txt
  * "<seq> <actor id> <owner> <x> <y>" / "<seq> off" — the mission Lua puts a marker with the owner's nick there
@@ -1413,6 +1416,7 @@ static void HookPtsWait(void *pts)
 typedef void (*CursorNode_t)(void *cursor, long long node, int a, int b);
 static CursorNode_t realCursorNode;
 #define RVA_CursorNode 0x5f9de0
+#define RVA_CursorOffset 0xea19d0   /* pointer to the tuning values; + 0xc44 / 0xc48 = the tile cursor's offset */
 #define MOVE_SEND_MS 60
 #define MOVE_OFF_MS 250
 static int moveSentOrd = -1;
@@ -1439,11 +1443,13 @@ static void HookCursorNode(void *cursor, long long node, int a, int b)
         void *actor = selected ? ((PtsSelected_t)(base + selected))(lastPts) : NULL;
         if (!actor) return;
         id = ActorId(actor);
-        char *game = *(char **)cursor;
-        char *first = *(char **)(game + 0x1cc8), *last = *(char **)(game + 0x1cc8 + 8);
+        char *game = *(char **)cursor, *nodes = *(char **)(game + 0x1cc8);   /* a pointer to the vector */
+        char *first = *(char **)nodes, *last = *(char **)(nodes + 8);
         if (node < 0 || node >= (last - first) / 0x48) return;
-        x = *(float *)(first + node * 0x48 + 0x24);
-        y = *(float *)(first + node * 0x48 + 0x28);
+        DWORD tune = ExeRva(RVA_CursorOffset);
+        char *t = tune ? *(char **)(base + tune) : NULL;   /* the game adds this to the tile, as its cursor does */
+        x = *(float *)(first + node * 0x48 + 0x24) + (t ? *(float *)(t + 0xc44) : 0);
+        y = *(float *)(first + node * 0x48 + 0x28) + (t ? *(float *)(t + 0xc48) : 0);
     }
     __except (EXCEPTION_EXECUTE_HANDLER) { return; }
     int ao = OrdinalOf(id);
@@ -2118,6 +2124,13 @@ static void Pump(void *sim)
                 NetLog("# the host loaded a checkpoint: to the main menu, joining from its next save (host log byte >= %lld)", needFrom);
                 NetQuitToMenu();
             }
+            else if (hostWon < 0)
+            {
+                /* Not won: the host abandoned / retreated from the mission (no "hostleft": that is only the pause
+                 * menu's quit). Before, the guest stayed in this battle, frozen (2026-11-28, laptop test 6). */
+                NetLog("# the host went on to another scene without winning: this battle is over here too");
+                hostLeftAt = GetTickCount64();
+            }
             else NetLog("# the host went on to another scene: this battle's replay stops here");
         }
         return;
@@ -2322,9 +2335,12 @@ static void WatchOther(void)
     static int wasConnected, toldLost;
     static ULONGLONG lostAt;
     ULONGLONG now = GetTickCount64();
+    static int leftFor = -1;
+    if (me == 2 && hostLeftAt && leftFor == scenesMade) hostLeftAt = 0;   /* "hostleft" and the scene: told once */
     if (me == 2 && hostLeftAt)
     {
         hostLeftAt = 0;
+        leftFor = scenesMade;
         NetLog("# the host left its battle: to the main menu in a few seconds (the host's next battle joins by itself)");
         Notify("host_left", 0);
         quitAt = now + 6000;
@@ -3070,7 +3086,7 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
     {
         saveAfterCheckpoint = 0;
         *((unsigned char *)game + 0xb4) = 1;
-        NetLog("# host: battle running again after the checkpoint: save asked for (the guest joins from it)");
+        NetLog("# host: battle running again (checkpoint / loaded after the main menu): save asked for (the guest joins from it)");
     }
     if (checkpointWanted && battle && ticking)
     {
@@ -3118,6 +3134,10 @@ static ULONG_PTR HookQuit(void *game, void *a2, void *a3, void *a4)
                         : "# guest: left the battle for the main menu: Continue there joins the host's battle again");
     }
     if (me == 1 && inBattle && !ours) NetLog("hostleft");
+    /* Host: whatever it loads next (Continue) is an old save; a guest joining from it read the log from that old point
+     * and replayed this "hostleft" again (in, then out — 2026-11-28, laptop test 6). A save once its next battle runs
+     * puts the log byte the guest starts from after this. */
+    if (me == 1 && hosting) saveAfterCheckpoint = 1;
     return realQuit(game, a2, a3, a4);
 }
 
@@ -3208,12 +3228,13 @@ static ULONG_PTR HookMenuUpdate(void *menu, void *dt)
     /* Game start of a guest whose loader put the host's save into its slot: Continue on that slot by itself, as for
      * the next battles (the menu's update, not its entry: LoadingGame there gave a black screen, EXE_NOTES). */
     static int startContinued;
-    if (loaderSlot && !startContinued && !worldTick && flag && base[flag] && now - menuSince > 1000)
+    if (loaderSlot && !startContinued && !worldTick && flag && base[flag] && now - menuSince > 300)
     {
         startContinued = 1;
-        continueAt = now + 1500;
+        continueAt = now + 200;
         NetLog("# main menu: game start with the host's save in slot %d: Continue by itself", GuestSlotIndex() + 1);
     }
+    if (continueAt && inputBlockUntil < continueAt + 500) inputBlockUntil = continueAt + 500;
     if (continueAt && now >= continueAt)
     {
         continueAt = 0;
@@ -3639,7 +3660,7 @@ static int ReadSession(const wchar_t *dir, char *word, char *net, char *arg)
         if (strncmp(line, "save ", 5) == 0) { SetSharedSave(line + 5); continue; }
         if (strncmp(line, "info ", 5) == 0) { NetTcpSetInfo(line + 5); strncpy(sessionInfo, line + 5, sizeof sessionInfo - 1); continue; }
         if (strncmp(line, "from ", 5) == 0) { SetFrom(line + 5); continue; }
-        if (strncmp(line, "slot ", 5) == 0) { MultiByteToWideChar(CP_UTF8, 0, line + 5, -1, guestSlotPath, MAX_PATH); loaderSlot = 1; continue; }
+        if (strncmp(line, "slot ", 5) == 0) { MultiByteToWideChar(CP_UTF8, 0, line + 5, -1, guestSlotPath, MAX_PATH); loaderSlot = 1; inputBlockUntil = GetTickCount64() + 40000; continue; }
         if (strcmp(line, "steam host") == 0) { steamMode = 1; continue; }
         if (strncmp(line, "steam join ", 11) == 0) { steamMode = 2; steamId = _strtoui64(line + 11, NULL, 10); continue; }
         if (sscanf(line, "%15s %127s", what, value) != 2) continue;

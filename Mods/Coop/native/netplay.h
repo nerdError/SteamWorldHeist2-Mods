@@ -60,6 +60,7 @@ const char *NetTcpFetchError(void);
 void NetIdle(void);
 /* Guest: go to the main menu from the battle or the world map (as pause, Quit; the autopilot's "quit"). */
 void NetQuitToMenu(void);
+int NetBlockInput(void);   /* guest: the dll is about to press Continue by itself: player input dropped */
 void NetLoadCheckpoint(void);   /* tests: the pause menu's "Load checkpoint" */
 void NetTestAim(int ordinal, int seconds);   /* tests: the host "aims" with that crewmate (aim lines) */
 /* Test autopilot: the netplay log (record / replayed) has this text (1). */
