@@ -402,9 +402,10 @@ function C.netWon(frameNo, E)
 end
 
 -- The other player's move target: the dll writes swh2_net_move.txt "<seq> <actor id> <owner> <x> <y>" while that
--- player points at a tile for its selected crewmate, "<seq> off" when not (netplay.c MoveDraw). Shown as a world text
--- with the owner's nick standing on that tile (entities.worldtexts.xml coop_move_N, no fade): spawned under a name of
--- ours, destroyed when it moves or goes. E = { SpawnEntity, DestroyEntity, FindEntityWithName, Vector }.
+-- player points at a tile for its selected crewmate, "<seq> off" when not (netplay.c MoveDraw). Shown as an anchor
+-- entity on that tile (coop_move_anchor: the game's pointer over it, seen on stand screenshots). A WORLDTEXT made by
+-- SpawnEntity was never drawn (2.6.0-2.6.2), nor one attached to the anchor by SpawnWorldText (only actors carry texts).
+-- E = { SpawnEntity, DestroyEntity, FindEntityWithName, Vector }.
 local MOVE, MARKER = "swh2_net_move.txt", "coop_move_marker"
 C.moveSeq = nil
 function C.netMove(frameNo, E)
@@ -420,7 +421,11 @@ function C.netMove(frameNo, E)
 	local owner, x, y = line:match("^%d+ %-?%d+ (%d) ([%-%d%.]+) ([%-%d%.]+)")
 	owner, x, y = tonumber(owner), tonumber(x), tonumber(y)
 	if not owner or owner < 1 or owner > 2 or not x or not y then return end
-	E.SpawnEntity("coop_move_" .. owner, E.Vector(x, y), E.Vector.Right, MARKER)
+	E.SpawnEntity("coop_move_anchor", E.Vector(x, y), E.Vector.Right, MARKER)
+	if not C.moveLogged then
+		C.moveLogged = true
+		C.log("move marker: first at " .. x .. "," .. y .. (E.FindEntityWithName(MARKER) and "" or " (anchor NOT found)"))
+	end
 end
 
 -- Guest: its battle is won and the host picks the next one. On the world map (map_hook.lua, OnEnterMap) the game's

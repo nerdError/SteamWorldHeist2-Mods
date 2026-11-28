@@ -552,7 +552,11 @@ static void *Hook(char *base, DWORD steamRva, HMODULE sdl, const char *name, voi
  */
 static int ClaimInstance(wchar_t *dataDir)
 {
-    int n = 1;
+    /* Test stand (NetTest --stand): its games start at instance SWH2_INSTANCE_FIRST (8, 9), apart from the player's. */
+    char first[8];
+    DWORD got = GetEnvironmentVariableA("SWH2_INSTANCE_FIRST", first, sizeof first);
+    int n = got && got < sizeof first ? atoi(first) : 1;
+    if (n < 1 || n > 15) n = 1;
     for (; n < 16; n++)
     {
         wchar_t name[64];

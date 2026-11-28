@@ -245,11 +245,12 @@ public sealed partial class CoopMod : IModPlugin
             "\t\t\t<HideInCutscenes>true</HideInCutscenes>\r\n" +
             "\t\t</WorldText>\r\n" +
             "\t</Entity>\r\n")) +
-            // The other player's move target (coop.lua C.netMove): "[ nick ]" standing on the tile, until destroyed.
+            // The other player's move target (coop.lua C.netMove): an anchor entity on the tile (a game pointer over it)
+            // with "[ nick ]" attached by SpawnWorldText. A WORLDTEXT made by SpawnEntity was never drawn (2.6.0-2.6.2).
             "\t<!-- SWH2 Co-op: the tile the other player points at for a move -->\r\n" + string.Concat(Enumerable.Range(1, 2).Select(i =>
             $"\t<Entity Name=\"coop_move_{i}\" Template=\"WORLDTEXT\">\r\n" +
             "\t\t<WorldText>\r\n" +
-            $"\t\t\t<TextStringId>coop_move_{i}</TextStringId>\r\n" +
+            "\t\t\t<AttachToEntity>true</AttachToEntity>\r\n" +
             "\t\t\t<Velocity>0,0</Velocity>\r\n" +
             $"\t\t\t<Color>{TagColors[i - 1]}</Color>\r\n" +
             "\t\t\t<Scale Start=\"1.6\" Time=\"0.15\">1.2</Scale>\r\n" +
@@ -258,7 +259,8 @@ public sealed partial class CoopMod : IModPlugin
             "\t\t\t<Offset>0,-30</Offset>\r\n" +
             "\t\t\t<HideInCutscenes>true</HideInCutscenes>\r\n" +
             "\t\t</WorldText>\r\n" +
-            "\t</Entity>\r\n"));
+            "\t</Entity>\r\n")) +
+            "\t<Entity Name=\"coop_move_anchor\">\r\n\t\t<Position/>\r\n\t\t<PointOfInterest Definition=\"hunters_mark_inactive\"/>\r\n\t</Entity>\r\n";
         ctx.Content.WriteText(file, xml.Insert(at, tags), bom: ctx.Content.ReadOriginal(file) is [0xEF, 0xBB, 0xBF, ..]);
     }
 

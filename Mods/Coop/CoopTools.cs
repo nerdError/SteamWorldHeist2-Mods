@@ -24,7 +24,8 @@ public sealed partial class CoopMod : IModTool, IModCommand
         "  info [ADDRESS[:PORT]]   (this game's mods/data fingerprint; with an address: compare with the host's running game) |\n" +
         "  status | store SLOT | record SLOT [--no-launch] | replay SLOT [--no-launch] | compare [--all] |\n" +
         "  run SLOT [--record | --autoplay] [--timeout SEC] [--stall SEC] [--script FILE]   (unattended: autopilot into the mission, replay, close, compare) |\n" +
-        "  net SLOT [--guest DIR] [--port N] [--timeout SEC] [--stall SEC] [--guest-plays] [--shots] [--names HOST,GUEST] [--drop SEC] [--late] [--rejoin SEC] [--after SEC] [--next] [--map-quit] [--win SEC] [--desync SEC] [--checkpoint SEC] [--menu-join] [--aim SEC]   (network test: this copy hosts, the GOG copy replays live over TCP;\n" +
+        "  net SLOT [--guest DIR | --stand] [--start FILE] [--port N] [--timeout SEC] [--stall SEC] [--guest-plays] [--shots] [--names HOST,GUEST] [--drop SEC] [--late] [--rejoin SEC] [--after SEC] [--next] [--map-quit] [--win SEC] [--desync SEC] [--checkpoint SEC] [--menu-join] [--aim SEC]   (network test: this copy hosts, the GOG copy replays live over TCP;\n" +
+        "    --stand: host AND guest from this folder (a GOG copy for tests), game instances 8 and 9, the player's own games untouched;\n" +
         "    --guest-plays: the crew is split host/guest, each plays its own from the record; --drop: the guest's connection breaks once, SEC s in;\n" +
         "    --late: the guest joins inside the host's battle, from the host's save there;\n" +
         "    --rejoin SEC: the guest quits to the main menu SEC s into the battle and must come back into it by itself)";
@@ -95,8 +96,9 @@ public sealed partial class CoopMod : IModTool, IModCommand
                     string? Opt(string name) { int i = a.ToList().IndexOf(name); return i >= 0 && i + 1 < a.Count ? a[i + 1] : null; }
                     int timeout = int.TryParse(Opt("--timeout"), out int t) ? t : 900, stall = int.TryParse(Opt("--stall"), out int st) ? st : 120;
                     int port = int.TryParse(Opt("--port"), out int pt) ? pt : 27015;
-                    string guestDir = Opt("--guest") ?? GameInstall.DetectAll().FirstOrDefault(d => !string.Equals(d, Game().Root, StringComparison.OrdinalIgnoreCase))
+                    string guestDir = a.Contains("--stand") ? Game().Root : Opt("--guest") ?? GameInstall.DetectAll().FirstOrDefault(d => !string.Equals(d, Game().Root, StringComparison.OrdinalIgnoreCase))
                         ?? throw new InvalidOperationException("No second game copy found: pass --guest DIR.");
+                    NetTest.StartOverride = Opt("--start");
                     ctx.Log(NetTest.RunNet(Game(), new GameInstall(guestDir), Slot(), port, timeout, stall, out bool netDiffers, guestPlays: a.Contains("--guest-plays"), shots: a.Contains("--shots"), names: Opt("--names")?.Split(','), dropSec: int.TryParse(Opt("--drop"), out int drop) ? drop : 0, late: a.Contains("--late"), rejoinSec: int.TryParse(Opt("--rejoin"), out int rejoin) ? rejoin : 0, afterSec: int.TryParse(Opt("--after"), out int after) ? after : 0, next: a.Contains("--next"), mapQuit: a.Contains("--map-quit"), winSec: int.TryParse(Opt("--win"), out int win) ? win : 0, desyncSec: int.TryParse(Opt("--desync"), out int desync) ? desync : 0, checkpointSec: int.TryParse(Opt("--checkpoint"), out int cp) ? cp : 0, menuJoin: a.Contains("--menu-join"), aimSec: int.TryParse(Opt("--aim"), out int aim) ? aim : 0));
                     return netDiffers ? 1 : 0;
                 }

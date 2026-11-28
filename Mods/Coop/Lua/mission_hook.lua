@@ -184,7 +184,7 @@ do
 		if C.netLog then
 			run(C.netFix, netApi); run(netCutscene); run(netOverCheck); run(netCrew)
 			if not over then run(C.netWon, frameNo, { EndMissionInVictory = EndMissionInVictory }) end
-			run(C.netMove, frameNo, { SpawnEntity = SpawnEntity, DestroyEntity = DestroyEntity,
+			run(C.netMove, frameNo, { SpawnEntity = SpawnEntity, DestroyEntity = DestroyEntity, SpawnWorldText = SpawnWorldText,
 				FindEntityWithName = FindEntityWithName, Vector = Vector })
 		else run(C.netClearStatus, RemoveCounter) end   -- a save from a network game keeps its status lines
 		run(function()

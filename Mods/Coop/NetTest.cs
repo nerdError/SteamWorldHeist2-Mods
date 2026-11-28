@@ -16,10 +16,57 @@ public static class NetTest
     public const string StartBank = "nettest start";
 
     public static string Dir => SaveBanks.SavesRoot;
-    public static string ControlFile => Path.Combine(Dir, "swh2_net.txt");
-    public static string RecordLog => Path.Combine(Dir, "swh2_net_record.log");
-    public static string ReplayLog => Path.Combine(Dir, "swh2_net_replay.log");
-    public static string ReplayedLog => Path.Combine(Dir, "swh2_net_replayed.log");
+    public static string ControlFile => Path.Combine(HostDir, "swh2_net.txt");
+    public static string RecordLog => Path.Combine(HostDir, "swh2_net_record.log");
+    public static string ReplayLog => Path.Combine(HostDir, "swh2_net_replay.log");
+    public static string ReplayedLog => Path.Combine(HostDir, "swh2_net_replayed.log");
+
+    /// <summary>
+    /// Test stand (2026-11-28, <c>nettest net N --stand</c>): host and guest are two games started from ONE folder — a
+    /// GOG copy kept for tests (C:\GOG Games\SteamWorld Heist 2 copy) — as game instances 8 and 9 (SWH2_INSTANCE_FIRST
+    /// for the Coop dll): their swh2_* files are in instance8\ / instance9\, apart from the player's own games (instance
+    /// 1, 2), which may run meanwhile; only processes of the test folder are minimized and closed. Saves: the GOG
+    /// Save000, the host in the test slot, the guest in the next one; the player's Steam saves are not touched.
+    /// </summary>
+    public const int StandHostInstance = 8;
+    static bool stand;
+    static readonly List<string> testExes = [];
+    public static string HostDir => stand ? Path.Combine(Dir, $"instance{StandHostInstance}") : Dir;
+    public static string GuestDir => Path.Combine(Dir, stand ? $"instance{StandHostInstance + 1}" : "instance2");
+
+    /// <summary>The saves a run uses: the stand's GOG ones, else the Steam account's.</summary>
+    static SaveBanks? Saves(GameInstall game) => stand ? SaveBanks.ForGame(game) : Account();
+
+    /// <summary>The test start's save file: a bank of those saves, else the Steam account's (where step 1 stores it).</summary>
+    /// <summary>nettest --start FILE: this save file instead of the start bank (e.g. a player's save from a test).</summary>
+    public static string? StartOverride;
+
+    static string? StartFile(SaveBanks? saves)
+    {
+        if (StartOverride != null) return File.Exists(StartOverride) ? StartOverride : throw new InvalidOperationException($"No save file {StartOverride}.");
+        var bank = saves?.Find(StartBank) ?? Account()?.Find(StartBank);
+        return bank == null ? null : Path.Combine(bank.Dir, "savegame.dat");
+    }
+
+    /// <summary>The running game processes of this run's folders (never the player's own game of another folder).</summary>
+    static IEnumerable<Process> Games()
+    {
+        foreach (var p in Process.GetProcessesByName(GameInstall.ExeName.Substring(0, GameInstall.ExeName.Length - 4)))
+        {
+            string? path = GameInstall.ProcessPath(p.Id);
+            if (path != null && testExes.Any(e => string.Equals(Path.GetFullPath(path), e, StringComparison.OrdinalIgnoreCase))) yield return p;
+            else p.Dispose();
+        }
+    }
+
+    static void StartGame(GameInstall game, int instance)
+    {
+        // Through the shell as before (the game's console output stays out of ours); the shell's child inherits this
+        // process's environment, so the variable is set around the start.
+        if (stand) Environment.SetEnvironmentVariable("SWH2_INSTANCE_FIRST", instance.ToString(CultureInfo.InvariantCulture));
+        try { Process.Start(new ProcessStartInfo(game.ExePath) { WorkingDirectory = game.Root, UseShellExecute = true })?.Dispose(); }
+        finally { if (stand) Environment.SetEnvironmentVariable("SWH2_INSTANCE_FIRST", null); }
+    }
 
     /// <summary>The installed exe was patched with the netTest setting (".coop" section + 0x60 = "NET1").</summary>
     public static bool InstalledWithNetTest(GameInstall game)
@@ -58,8 +105,8 @@ public static class NetTest
         if (game.IsRunning) throw new InvalidOperationException("Close the game first (it keeps the save slots in memory).");
         if (!InstalledWithNetTest(game))
             throw new InvalidOperationException("The game was installed without Co-op → Netplay test: tick it in the mod settings and click Apply to game.");
-        var account = Account() ?? throw new InvalidOperationException("No game saves found.");
-        if (account.Find(StartBank) == null) throw new InvalidOperationException("No test start yet: store a slot first (step 1).");
+        var account = Saves(game) ?? throw new InvalidOperationException("No game saves found.");
+        string start = StartFile(account) ?? throw new InvalidOperationException("No test start yet: store a slot first (step 1).");
         var lines = new List<string>();
         if (replay)
         {
@@ -68,23 +115,23 @@ public static class NetTest
             lines.Add("Record copied to swh2_net_replay.log.");
         }
         Guard(account, slot, lines);
-        var auto = account.Load(StartBank, slot);
+        var auto = account.Put(slot, File.ReadAllBytes(start));
         lines.Add($"Test start put into slot {slot + 1}" + (auto != null ? $" (what was there is kept as bank \"{auto.Name}\")." : "."));
-        Directory.CreateDirectory(Dir);
+        Directory.CreateDirectory(HostDir);
         File.WriteAllText(ControlFile, autoplay ? "autoplay\n" : replay ? "replay\n" : "record\n");
         lines.Add(replay
             ? $"Replay on. In the game: Continue / load slot {slot + 1}, enter the mission and don't touch anything until the replay is done (then quit and compare)."
             : $"Recording on. In the game: Continue / load slot {slot + 1}, play a few turns (let the enemies act), then quit the game.");
         if (launch)
         {
-            Process.Start(new ProcessStartInfo(game.ExePath) { WorkingDirectory = game.Root, UseShellExecute = true });
+            StartGame(game, StandHostInstance);
             lines.Add("Game started.");
         }
         return string.Join(Environment.NewLine, lines);
     }
 
-    public static string AutoScriptFile => Path.Combine(Dir, "swh2_net_autorun.txt");
-    public static string AutoLog => Path.Combine(Dir, "swh2_coop_input.log");
+    public static string AutoScriptFile => Path.Combine(HostDir, "swh2_net_autorun.txt");
+    public static string AutoLog => Path.Combine(HostDir, "swh2_coop_input.log");
 
     /// <summary>
     /// From game start into the mission saved in the slot, for the dll autopilot (swh2coop.c): Return until the mission
@@ -110,6 +157,9 @@ public static class NetTest
     public static string Run(GameInstall game, int slot, bool replay, int timeoutSec, int stallSec, IEnumerable<string>? script, out bool differs, bool autoplay = false)
     {
         differs = true;
+        stand = false;
+        testExes.Clear();
+        testExes.Add(Path.GetFullPath(game.ExePath));
         var sb = new StringBuilder();
         if (autoplay) replay = true;   // the record becomes the script (swh2_net_replay.log)
         sb.AppendLine(Prepare(game, slot, replay, launch: false, autoplay));
@@ -126,7 +176,6 @@ public static class NetTest
     /// <summary>--next: the host's next battle (the test mission again: its crew and script are known to work).</summary>
     const string NextMission = "west_caribbea_23";
 
-    public static string GuestDir => Path.Combine(Dir, "instance2");
     public static string GuestReplayedLog => Path.Combine(GuestDir, "swh2_net_replayed.log");
 
     /// <summary>
@@ -151,7 +200,11 @@ public static class NetTest
     public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0, int afterSec = 0, bool next = false, bool mapQuit = false, int winSec = 0, int desyncSec = 0, int checkpointSec = 0, bool menuJoin = false, int aimSec = 0)
     {
         differs = true;
-        if (GameInstall.AnyRunning) throw new InvalidOperationException("Close every copy of the game first.");
+        stand = string.Equals(Path.GetFullPath(host.Root), Path.GetFullPath(guest.Root), StringComparison.OrdinalIgnoreCase);
+        testExes.Clear();
+        testExes.Add(Path.GetFullPath(host.ExePath));
+        testExes.Add(Path.GetFullPath(guest.ExePath));
+        if (stand ? host.IsRunning : GameInstall.AnyRunning) throw new InvalidOperationException(stand ? "Close the test folder's game first." : "Close every copy of the game first.");
         if (guest.Store != "GOG") throw new InvalidOperationException("The guest copy must be the GOG one (a second Steam copy would share the host's save slots).");
         if (!InstalledWithNetTest(guest))
             throw new InvalidOperationException($"The guest ({guest.Root}) was installed without Co-op → Netplay test.");
@@ -159,7 +212,7 @@ public static class NetTest
         sb.AppendLine(Prepare(host, slot, replay: true, launch: false, autoplay: true));
         // The record to play: the guest takes it (guest play) before the host starts a new one over it.
         if (guestPlays) { Directory.CreateDirectory(GuestDir); File.Copy(RecordLog, Path.Combine(GuestDir, "swh2_net_guestplay.log"), true); }
-        var account0 = Account() ?? throw new InvalidOperationException("No game saves found.");
+        var account0 = Saves(host) ?? throw new InvalidOperationException("No game saves found.");
         File.WriteAllText(ControlFile, $"autoplay host 127.0.0.1:{port}\n" + (names is [var hostName, ..] ? $"name {hostName}\n" : "") +
             (late || menuJoin || rejoinSec > 0 || desyncSec > 0 || checkpointSec > 0 || next || mapQuit ? $"save {account0.SlotPath(slot)}\n" : ""));   // this PC only: no firewall question
         // --next: after the lost mission the host loads the checkpoint (its battle again, a new save there), the guest goes
@@ -179,32 +232,36 @@ public static class NetTest
         File.WriteAllLines(AutoScriptFile, hostScript);
 
         // The guest: same start save in its own slot, live replay from the host, same autopilot.
-        var account = Account() ?? throw new InvalidOperationException("No game saves found.");
-        var bank = account.Find(StartBank) ?? throw new InvalidOperationException("No test start yet.");
-        string guestSaves = Path.Combine(Dir, "Save000"), guestSlot = Path.Combine(guestSaves, $"savegame_{slot:000}.dat");
+        // Stand: both games use the GOG Save000 — the guest's slot is the next one (its dll Continues on it by itself).
+        int gslot = stand ? slot + 1 : slot;
+        string startFile = StartFile(account0) ?? throw new InvalidOperationException("No test start yet.");
+        string guestSaves = Path.Combine(Dir, "Save000"), guestSlot = Path.Combine(guestSaves, $"savegame_{gslot:000}.dat");
         Directory.CreateDirectory(guestSaves);
         if (File.Exists(guestSlot) && !File.Exists(guestSlot + ".nettest-kept")) File.Copy(guestSlot, guestSlot + ".nettest-kept");
-        File.Copy(Path.Combine(bank.Dir, "savegame.dat"), guestSlot, true);
+        File.Copy(startFile, guestSlot, true);
+        if (File.Exists(guestSlot + ".backup")) File.Delete(guestSlot + ".backup");
         Directory.CreateDirectory(GuestDir);
         string guestControl = $"replay connect 127.0.0.1:{port}{(guestPlays ? " play" : "")}\n" + (names is [_, var guestName, ..] ? $"name {guestName}\n" : "") +
-            $"slot {guestSlot}\n" +
+            $"slot {guestSlot}\n" + (stand ? "continue\n" : "") +
             (dropSec > 0 ? $"drop {dropSec}\n" : "");
         File.WriteAllText(Path.Combine(GuestDir, "swh2_net.txt"), guestControl);
         // --menu-join: as a guest that Steam's "Join game" started (no loader, no "from"): nothing pressed in the menu —
         // its dll is to fetch the host's save there, bank the slot's old file, put the save in and Continue by itself.
-        var guestScript = menuJoin ? new List<string> { "popups on", "cutscenes on" } : DefaultAutoScript(slot).ToList();
+        // Stand: no Return pressed in the menu either — the games share settings.xml, whose last slot is the host's.
+        var guestScript = menuJoin || stand ? new List<string> { "popups on", "cutscenes on" } : DefaultAutoScript(slot).ToList();
         if (rejoinSec > 0) guestScript.AddRange(new[] { $"wait {rejoinSec * 1000}", "quit" });
         if (next) guestScript.AddRange(toMap);
         if (mapQuit) guestScript.AddRange(toMap.Concat(new[] { "wait 30000", "quit" }));
         File.WriteAllLines(Path.Combine(GuestDir, "swh2_net_autorun.txt"), guestScript);
-        sb.AppendLine($"Guest: test start in its slot {slot + 1} ({guestSlot}, what was there kept as .nettest-kept), replays live from 127.0.0.1:{port}.");
+        if (stand) sb.AppendLine($"Test stand: {host.Root}, host = game instance {StandHostInstance} ({HostDir}), guest = instance {StandHostInstance + 1} ({GuestDir}).");
+        sb.AppendLine($"Guest: test start in its slot {gslot + 1} ({guestSlot}, what was there kept as .nettest-kept), replays live from 127.0.0.1:{port}.");
 
         string? settings = Windowed();
         string? hostProfile = LastSlot(account0, slot);
         try
         {
             var started = DateTime.Now;
-            Process.Start(new ProcessStartInfo(host.ExePath) { WorkingDirectory = host.Root, UseShellExecute = true })?.Dispose();
+            StartGame(host, StandHostInstance);
             Thread.Sleep(8000);   // the host claims instance 1 before the guest starts
             long logFrom = 0;
             if (late)
@@ -229,7 +286,7 @@ public static class NetTest
                 File.WriteAllText(Path.Combine(GuestDir, "swh2_net.txt"), guestControl + $"from {got.LogFrom} {got.TurnEnds} {(got.InBattle ? "battle" : "map")}\n");
                 sb.AppendLine($"Late join: the host saved in its battle {(DateTime.Now - started).TotalSeconds:0} s in, at log byte {got.LogFrom} ({got.TurnEnds} turn ends before, {(got.InBattle ? "in the battle" : "NOT in the battle")}); that save is the guest's start.");
             }
-            Process.Start(new ProcessStartInfo(guest.ExePath) { WorkingDirectory = guest.Root, UseShellExecute = true })?.Dispose();
+            StartGame(guest, StandHostInstance + 1);
             long lastSize = -1;
             var lastChange = DateTime.Now;
             var minimized = new HashSet<IntPtr>();
@@ -263,7 +320,7 @@ public static class NetTest
                 if (inAt != null && winSec > 0 && !winSent && (DateTime.Now - inAt.Value).TotalSeconds >= winSec)
                 {
                     winSent = true;
-                    foreach (var (dir, cheat) in new[] { (Dir, next ? "mission " + NextMission : "win"), (GuestDir, "win") })
+                    foreach (var (dir, cheat) in new[] { (HostDir, next ? "mission " + NextMission : "win"), (GuestDir, "win") })
                         File.AppendAllText(Path.Combine(dir, "swh2_cheats_cmd.txt"), $"{DateTime.UtcNow:HHmmssfff} {DateTimeOffset.UtcNow.ToUnixTimeSeconds()} {cheat}\n");
                     sb.AppendLine(next ? $"Cheats {winSec} s into the battle: host \"mission {NextMission}\", guest \"win\"." : $"Cheat \"win\" sent to both {winSec} s into the battle.");
                 }
@@ -277,7 +334,7 @@ public static class NetTest
                 if (overAt == null && size > 0 && (DateTime.Now - lastChange).TotalSeconds > stallSec) { end = $"the guest logged nothing for {stallSec} s"; break; }
                 if ((DateTime.Now - started).TotalSeconds > timeoutSec) break;
             }
-            foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameInstall.ExeName)))
+            foreach (var p in Games())
                 using (p) { try { p.Kill(); p.WaitForExit(10000); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } }
             sb.AppendLine($"Run over after {(DateTime.Now - started).TotalSeconds:0} s: {end}.");
             foreach (var (who, path) in new[] { ("Host", RecordLog), ("Guest", GuestReplayedLog) })
@@ -320,7 +377,7 @@ public static class NetTest
             {
                 // The guest's battle starts at the save: compare the host's record from there on.
                 var bytes = File.ReadAllBytes(RecordLog);
-                record = Path.Combine(Dir, "swh2_net_record_from_save.log");
+                record = Path.Combine(HostDir, "swh2_net_record_from_save.log");
                 File.WriteAllBytes(record, bytes.Skip((int)Math.Min(logFrom, bytes.Length)).ToArray());
             }
             sb.Append(Compare(out differs, record: record, replayed: replayed));
@@ -344,7 +401,7 @@ public static class NetTest
     /// <summary>Moves the game windows off the screen without activating them: they keep drawing, the desktop stays free.</summary>
     static void OffScreenAll(HashSet<IntPtr> done)
     {
-        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameInstall.ExeName)))
+        foreach (var p in Games())
             using (p)
                 if (p.MainWindowHandle != IntPtr.Zero && done.Add(p.MainWindowHandle))
                     SetWindowPos(p.MainWindowHandle, (IntPtr)1, -4000, 100, 0, 0, 0x0001 | 0x0010);   // HWND_BOTTOM, SWP_NOSIZE | SWP_NOACTIVATE
@@ -354,7 +411,7 @@ public static class NetTest
     static void Capture(int n)
     {
         int k = 0;
-        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameInstall.ExeName)).OrderBy(p => p.StartTime))
+        foreach (var p in Games().OrderBy(p => p.StartTime))
             using (p)
             {
                 var h = p.MainWindowHandle;
@@ -377,7 +434,7 @@ public static class NetTest
 
     static void MinimizeAll(HashSet<IntPtr> done)
     {
-        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameInstall.ExeName)))
+        foreach (var p in Games())
             using (p)
                 if (p.MainWindowHandle != IntPtr.Zero && done.Add(p.MainWindowHandle)) ShowWindow(p.MainWindowHandle, 7);
     }
@@ -439,7 +496,7 @@ public static class NetTest
     {
         differs = true;
         var started = DateTime.Now;
-        using var proc = Process.Start(new ProcessStartInfo(game.ExePath) { WorkingDirectory = game.Root, UseShellExecute = true });
+        StartGame(game, StandHostInstance);
         long lastSize = -1;
         var lastChange = DateTime.Now;
         bool minimized = false;
@@ -462,7 +519,7 @@ public static class NetTest
             if (size > 0 && (DateTime.Now - lastChange).TotalSeconds > stallSec) { end = $"nothing logged for {stallSec} s"; break; }
             if ((DateTime.Now - started).TotalSeconds > timeoutSec) break;
         }
-        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameInstall.ExeName)))
+        foreach (var p in Games())
             using (p) { try { p.Kill(); p.WaitForExit(10000); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } }
         sb.AppendLine($"Run over after {(DateTime.Now - started).TotalSeconds:0} s: {end}.");
         if (!File.Exists(outLog) || File.GetLastWriteTime(outLog) < started) { sb.AppendLine("No log written: the mission was never entered (see the autopilot lines in swh2_coop_input.log)."); return sb.ToString().TrimEnd(); }
@@ -483,7 +540,7 @@ public static class NetTest
     /// </summary>
     static bool MinimizeGame()
     {
-        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameInstall.ExeName)))
+        foreach (var p in Games())
             using (p)
                 if (p.MainWindowHandle != IntPtr.Zero) { ShowWindow(p.MainWindowHandle, 7); return true; }
         return false;

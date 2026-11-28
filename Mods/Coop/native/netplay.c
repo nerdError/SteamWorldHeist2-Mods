@@ -192,6 +192,7 @@ static void Notify(const char *name, int actor)
     NetLog("# notify %d: %s %d", eventSeq, name, actor);
 }
 
+static int saveForGuest;   /* host: the guest left mid-battle: a save of this battle now (the one it comes back from) */
 /* Host: the guest left the battle (quit to the menu, or the connection is gone): its crewmates are the host's until it
  * is back ("ready" from its battle again), and a new battle doesn't wait for it. */
 static int guestAway;
@@ -366,6 +367,25 @@ static void *HookCameraPan(void *pan, void *pos, float hold, unsigned char cinem
 {
     if (fabsf(hold - COOP_PAN_HOLD) < 0.0001f) cinematic = 0;
     return realCameraPan(pan, pos, hold, cinematic, panMode);
+}
+
+/* The camera target 0x575bc0(camera, kind, entity id, ...) — Lua SetCameraTargetEntity and the game itself: the player
+ * turn code (0x45a210 / 0x45b690) points the camera at the actor that acts. In a network game an action of the other
+ * player's crewmate pulled this game's camera to it (2026-11-28, laptop test 7: "the camera goes to the other
+ * player's bot"). Now the camera only goes to crewmates of this player (and enemies, as before). */
+typedef void *(*CameraTarget_t)(void *camera, int kind, int id, void *a4, unsigned char a5, int mode, float time);
+static CameraTarget_t realCameraTarget;
+#define RVA_CameraTarget 0x575bc0
+
+static void *HookCameraTarget(void *camera, int kind, int id, void *a4, unsigned char a5, int mode, float time)
+{
+    if (me && OwnerOf(id) && !Mine(id))
+    {
+        static int told;
+        if (!told) { told = 1; NetLog("# camera: the other player's crewmate %d not followed (first time)", id); }
+        return NULL;
+    }
+    return realCameraTarget(camera, kind, id, a4, a5, mode, time);
 }
 
 /* The skip button of the tactics HUD (0x1cfc20(ui) picks its mode [ui + 0x28]: 0 none, 1 cutscene, 2..4 skip actions
@@ -1935,6 +1955,9 @@ static void HostPlay(void *sim, const char *line)
         NetLog("# the guest left the battle: its crewmates are the host's until it is back");
         if (!guestAway) Notify("guest_left", 0);
         guestAway = 1;
+        /* Its Continue loads the slot with the host's latest save: without a new one that was the mission start — the
+         * guest came back to a door still shut that the host had opened (2026-11-28, laptop test 7). */
+        saveForGuest = 1;
         return;
     }
     int ao, index, type = -1, n;
@@ -2296,9 +2319,31 @@ static int CurrentFactionActors(void *sim, int *ids, int max)
  * quiet for STUCK_FRAMES and no actor of the faction has action points left (the game ends it in a few frames when it
  * does). */
 #define STUCK_FRAMES 30   /* was 120 (2 s): the user pressed Wait / Esc in that pause, it felt like a stuck turn */
+/* Diagnostics (2026-11-28, laptop test 7: after a mission script's camera both players had nothing to do and no
+ * turn end): once the battle has been quiet for 10 s, what each crewmate has left and what holds the turn. */
+static void QuietReport(void *sim)
+{
+    static int lastCmdFrame = -1, toldAt = -1;
+    static int lastCount = -1;
+    if ((int)seq != lastCount) { lastCount = (int)seq; lastCmdFrame = frame; return; }
+    if (frame - lastCmdFrame < 600 || toldAt == lastCmdFrame) return;
+    toldAt = lastCmdFrame;
+    char text[512];
+    int len = sprintf(text, "# quiet 10 s: held %d busy %d cutscene %d replaying %d acted %d/%d crew", HELD(), Busy(sim), CutsceneNow(), replaying, crewActedFor, endsLogged);
+    for (int i = 0; i < crewLen && len < 440; i++)
+    {
+        void *a = FindActor(sim, crewIds[i]);
+        int ap = -99;
+        if (a) __try { ap = *(int *)((char *)a + 0x90); } __except (EXCEPTION_EXECUTE_HANDLER) { }
+        len += sprintf(text + len, " %d:%d", crewIds[i], ap);
+    }
+    NetLog("%s", text);
+}
+
 static void TurnWatch(void *sim)
 {
     static int quiet, endedFor = -1;
+    QuietReport(sim);
     if (!hosting || HELD() || replaying || crewActedFor != endsLogged || endedFor == endsLogged || Busy(sim) || CutsceneNow())
     {
         quiet = 0;
@@ -3088,6 +3133,12 @@ static ULONG_PTR HookGameUpdate(void *game, void *dt)
         *((unsigned char *)game + 0xb4) = 1;
         NetLog("# host: battle running again (checkpoint / loaded after the main menu): save asked for (the guest joins from it)");
     }
+    if (saveForGuest && battle && ticking && hosting)
+    {
+        saveForGuest = 0;
+        *((unsigned char *)game + 0xb4) = 1;
+        NetLog("# host: the guest left the battle: save asked for (it comes back from that one)");
+    }
     if (checkpointWanted && battle && ticking)
     {
         checkpointWanted = 0;
@@ -3723,6 +3774,8 @@ void NetInstall(char *exeBase, const wchar_t *dir)
             if (strncmp(line, "from ", 5) == 0) SetFrom(line + 5);
             if (strncmp(line, "slot ", 5) == 0) MultiByteToWideChar(CP_UTF8, 0, line + 5, -1, guestSlotPath, MAX_PATH);
             if (strncmp(line, "drop ", 5) == 0) NetTcpTestDrop(atoi(line + 5) * 1000);   /* test: reconnect */
+            /* test stand: Continue on the slot by itself at game start, as a loader's guest (nothing pressed in the menu) */
+            if (strcmp(line, "continue") == 0) { loaderSlot = 1; inputBlockUntil = GetTickCount64() + 40000; }
         }
         fclose(f);
     }
@@ -3807,6 +3860,9 @@ void NetInstall(char *exeBase, const wchar_t *dir)
         NetLog(realCanSelect ? "# %s: only the own crew can be selected" : "# ERROR: %s: selection hook not installed", me == 1 ? "host" : "guest");
         static const unsigned char cameraPan[] = { 0x48,0x89,0x4c,0x24,0x08,0x48,0x83,0xec,0x48,0x48,0xc7,0x04,0x24,0xfe,0xff,0xff,0xff };
         realCameraPan = (CameraPan_t)InlineHook(RVA_CameraPan, cameraPan, sizeof cameraPan, (void *)HookCameraPan);
+        static const unsigned char cameraTarget[] = { 0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x6c,0x24,0x18,0x48,0x89,0x74,0x24,0x20 };
+        realCameraTarget = (CameraTarget_t)InlineHook(RVA_CameraTarget, cameraTarget, sizeof cameraTarget, (void *)HookCameraTarget);
+        if (!realCameraTarget) NetLog("# ERROR: camera target hook not installed: the camera follows the other player's crewmates");
         if (!realCameraPan) NetLog("# ERROR: camera pan hook not installed: the co-op camera pans show the letterbox");
         static const unsigned char skipMode[] = { 0x48,0x89,0x5c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57,0x48,0x83,0xec,0x20 };
         realSkipMode = (SkipMode_t)InlineHook(RVA_SkipMode, skipMode, sizeof skipMode, (void *)HookSkipMode);
