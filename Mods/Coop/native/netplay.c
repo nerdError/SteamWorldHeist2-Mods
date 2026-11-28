@@ -46,6 +46,7 @@
 #include <limits.h>
 #include <intrin.h>
 #include "netplay.h"
+#include "steamnet.h"
 #pragma intrinsic(_ReturnAddress)
 
 /* Steam-build RVAs (ExeRva translates them for GOG). */
@@ -121,6 +122,8 @@ static int ordSeeded;      /* guest, joinedMid: the host's ordinals are in (once
 /* The next battle without a restart (see NetIdle): the guest's slot file, the host's save waiting for the main menu,
  * and the one written there, whose battle the replay rebases to when it loads. */
 static wchar_t guestSlotPath[MAX_PATH];
+static void WriteCoopSlot(void);
+static int steamMode;   /* see ReadSession */
 static char *nextSave;
 static int nextSaveLen, nextEnds, rejoinEnds, rejoinPending;
 static int scenesMade;   /* guest: scenes (battles, the world map) this game made so far */
@@ -1477,6 +1480,7 @@ static const char *const nameKeys[] = {
     "tutorial_coop_net_guest_lost", "tutorial_coop_net_guest_lost_page1", "tutorial_coop_net_host_left", "tutorial_coop_net_host_left_page1",
     "tutorial_coop_net_host_lost", "tutorial_coop_net_host_lost_page1",
     "coop_net_refused_cell", "coop_net_refused_gone", "coop_net_refused_notyours", "coop_net_refused_bad",
+    "tutorial_coop_net_version", "tutorial_coop_net_version_page1",
 };
 
 /* The value std::string of a text key in the game's table (NULL: no table yet / no such key). */
@@ -2522,6 +2526,7 @@ static void ParseScriptLine(const char *line)
         n[63] = 0;
         n[strcspn(n, "\r\n")] = 0;
         SetName(isHost ? hostName : guestName, n);
+        if (isHost && guestSlotPath[0]) WriteCoopSlot();   /* the main menu marks the co-op slot with this nick */
         return;
     }
     unsigned z, w;
@@ -2821,6 +2826,50 @@ static int GuestSlotIndex(void)
     return p && swscanf(p + 9, L"%d", &n) == 1 ? n : -1;
 }
 
+/* Before the host's save first goes into this game's slot: the slot's old file into a save bank of the loader
+ * (%APPDATA%\SWH2ModLoader\SaveBanks\<account>\auto coop <time>\savegame.dat + bank.txt, SaveBanks.cs format) —
+ * a guest that came straight from Steam's "Join game" (no loader) may have its own campaign there. Once per game. */
+static void BankGuestSlot(void)
+{
+    static int done;
+    if (done) return;
+    done = 1;
+    if (GetFileAttributesW(guestSlotPath) == INVALID_FILE_ATTRIBUTES) return;
+    const wchar_t *save = wcsstr(guestSlotPath, L"\\Save000\\");
+    const wchar_t *acc = save;
+    while (acc && acc > guestSlotPath && acc[-1] != L'\\') acc--;
+    wchar_t account[64] = L"gog", dir[MAX_PATH], file[MAX_PATH];
+    if (acc && save - acc > 0 && save - acc < 60 && iswdigit(*acc)) { wcsncpy(account, acc, save - acc); account[save - acc] = 0; }
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    DWORD n = GetEnvironmentVariableW(L"APPDATA", dir, MAX_PATH);
+    if (!n || n > MAX_PATH - 120) return;
+    wcscat(dir, L"\\SWH2ModLoader");
+    CreateDirectoryW(dir, NULL);
+    wcscat(dir, L"\\SaveBanks");
+    CreateDirectoryW(dir, NULL);
+    _snwprintf(dir + wcslen(dir), MAX_PATH - wcslen(dir), L"\\%s", account);
+    CreateDirectoryW(dir, NULL);
+    _snwprintf(dir + wcslen(dir), MAX_PATH - wcslen(dir), L"\\auto coop %04d-%02d-%02d %02d-%02d-%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+    if (!CreateDirectoryW(dir, NULL)) return;
+    _snwprintf(file, MAX_PATH, L"%s\\savegame.dat", dir);
+    int ok = CopyFileW(guestSlotPath, file, FALSE);
+    wchar_t backup[MAX_PATH + 8];
+    _snwprintf(backup, MAX_PATH + 8, L"%s.backup", guestSlotPath);
+    _snwprintf(file, MAX_PATH, L"%s\\savegame.dat.backup", dir);
+    CopyFileW(backup, file, FALSE);
+    _snwprintf(file, MAX_PATH, L"%s\\bank.txt", dir);
+    FILE *f = _wfopen(file, L"w");
+    if (f)
+    {
+        SYSTEMTIME u;
+        GetSystemTime(&u);
+        fprintf(f, "slot=%d\nsaved=%04d-%02d-%02dT%02d:%02d:%02d.0000000Z\n", GuestSlotIndex(), u.wYear, u.wMonth, u.wDay, u.wHour, u.wMinute, u.wSecond);
+        fclose(f);
+    }
+    NetLog(ok ? "# main menu: the old file of slot %d kept in the loader's save banks (auto coop ...)" : "# ERROR: main menu: slot %d could not be banked", GuestSlotIndex() + 1);
+}
+
 static ULONG_PTR HookMenuUpdate(void *menu, void *dt)
 {
     ULONG_PTR r = realMenuUpdate(menu, dt);
@@ -2831,6 +2880,8 @@ static ULONG_PTR HookMenuUpdate(void *menu, void *dt)
     /* Once the game has read its slots itself (the menu's own job), a moment into the menu. */
     if (nextSave && guestSlotPath[0] && flag && load && base[flag] && now - menuSince > 1000)
     {
+        BankGuestSlot();
+        WriteCoopSlot();
         FILE *f = _wfopen(guestSlotPath, L"wb");
         int ok = f && fwrite(nextSave, 1, nextSaveLen, f) == (size_t)nextSaveLen;
         if (f) fclose(f);
@@ -2869,8 +2920,66 @@ static ULONG_PTR HookMenuUpdate(void *menu, void *dt)
     return r;
 }
 
+/* Steam's "Join game" / an invite accepted while this game runs: the network game is set up at game start, so the game
+ * starts again through Steam with "+connect_lobby <id>" (SteamNetLaunchLobby) — only outside a battle, never while
+ * hosting. */
+static void SteamJoinWatch(void)
+{
+    static ULONGLONG last;
+    ULONGLONG now = GetTickCount64();
+    if (now - last < 250) return;
+    last = now;
+    unsigned long long lobby = SteamNetJoinRequest();
+    if (!lobby) return;
+    if (me == 1) { NetLog("# Steam: a join request (lobby %llu) while hosting: ignored", lobby); return; }
+    if (worldTick && now - worldTick < 5000) { NetLog("# Steam: a join request (lobby %llu) during a battle: ignored, leave the battle and join again", lobby); return; }
+    wchar_t cmd[400];
+    _snwprintf(cmd, 400, L"cmd.exe /c ping -n 4 127.0.0.1 >nul & start \"\" \"steam://run/2396240//+connect_lobby %llu/\"", lobby);
+    STARTUPINFOW si = { sizeof si };
+    PROCESS_INFORMATION pi;
+    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) { NetLog("# ERROR: Steam: the game could not be started again to join"); return; }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    NetLog("# Steam: joining lobby %llu: the game starts again", lobby);
+    ExitProcess(0);
+}
+
+static int loaderSave;   /* guest: the loader put the host's save into the slot before the game started (session "from") */
+
+#ifndef SWH2COOP_SRC
+#define SWH2COOP_SRC "unknown"
+#endif
+/* Steam guest (no loader, so no loader check): the host's lobby data "info" has "dll=src:<id>" of its Coop dll;
+ * another id = another version of the mod: logged, and the game's popup in the battle (Notify "version"). */
+static void SteamVersionCheck(void)
+{
+    static int done, popupDue;
+    static ULONGLONG inBattleSince;
+    if (popupDue)
+    {
+        /* The popup shows only for an event that comes after the battle's first status read (coop.lua netEvent). */
+        ULONGLONG now = GetTickCount64();
+        if (!worldTick || now - worldTick > 1000) { inBattleSince = 0; return; }
+        if (!inBattleSince) inBattleSince = now;
+        if (now - inBattleSince > 5000) { popupDue = 0; Notify("version", 0); }
+        return;
+    }
+    if (done || steamMode != 2) return;
+    const char *info = SteamNetLobbyInfo(), *p = strstr(info, "dll=src:");
+    if (!info[0]) return;
+    done = 1;
+    char host[40] = "";
+    if (p) sscanf(p + 8, "%39s", host);
+    if (!host[0]) { NetLog("# Steam: the host's lobby has no dll id (%.80s): versions not compared", info); return; }
+    if (strcmp(host, SWH2COOP_SRC) == 0) { NetLog("# Steam: same Coop dll as the host's (src %s)", host); return; }
+    NetLog("# ERROR: Steam: the host's Coop dll is another version (src %s, this one %s): the battle may go differently", host, SWH2COOP_SRC);
+    popupDue = 1;
+}
+
 void NetIdle(void)
 {
+    if (me != 1 && SteamNetAvailable()) SteamJoinWatch();
+    if (me == 2) SteamVersionCheck();
     if (me != 2 || !live || !guestSlotPath[0]) return;
     static ULONGLONG last, lastFetch;
     static int wasInBattle;
@@ -2879,7 +2988,8 @@ void NetIdle(void)
     last = now;
     static int idleLogged;
     if (worldTick && now - worldTick < 3000) { wasInBattle = 1; idleLogged = 0; return; }
-    if (!wasInBattle || rejoinPending) return;   /* before the first battle the loader put the save there already */
+    /* Before the first battle the loader put the save there already — unless the game came from Steam's "Join game". */
+    if ((!wasInBattle && loaderSave) || rejoinPending) return;
     if (!idleLogged) { idleLogged = 1; NetLog("# guest: out of the battle: asking the host for its save every 3 s"); }
     char *data;
     int len, ends, battle;
@@ -2979,6 +3089,76 @@ static void CosmeticRng(void)
 
 /* Inline hook: the first n bytes of the function (whole instructions, position-independent, n >= 14) are checked,
  * copied into a trampoline that jumps back, and replaced by jmp [rip+0] <hook>. steamRva: see ExeRva. */
+/* ---- main menu: the co-op slot (2026-11-28) ----
+ * The slot buttons (UI/ui.me template main_menu_profile_slot) are filled by 0x5f1610(menu, ProfileSlot *slot, int i)
+ * (the tail of 0x5f12d0, which makes the button): the button = [[menu + 0x40] + 0x3c8][i] (16-byte entries, widget
+ * first), its label "name" (child 0x7536b0, __RTDynamicCast 0xa08489 Widget 0xe6cd90 -> Label 0xe6cdb8) gets the
+ * header "<captain> - <place>" through Label::SetText 0x747ff0(label, string_view *) (current text: std::string at
+ * [label + 0x570] + 0x28); slot state [slot] 0 = empty. The guest's dll notes the slot the host's save went into and
+ * the host's nick (swh2_coop_slot.txt "<slot index> <nick>"), and the hook puts "Co-op with <nick> - " before the header (ASCII: the menu font) —
+ * in every start of the game, so the player sees which slot is the co-op one. */
+#define RVA_SlotFill 0x5f1610
+#define RVA_LabelSetText 0x747ff0
+#define RVA_DynCast 0xa08489
+#define RVA_RttiWidget 0xe6cd90
+#define RVA_RttiLabel 0xe6cdb8
+typedef void (*SlotFill_t)(void *menu, void *slot, int index);
+typedef void *(*DynCast_t)(void *p, long delta, void *src, void *dst, int ref);
+typedef void (*LabelSetText_t)(void *label, View *text);
+static SlotFill_t realSlotFill;
+static wchar_t coopSlotPath[MAX_PATH];
+
+/* Guest: the host's save is in this slot now (or the host's nick just came). */
+static void WriteCoopSlot(void)
+{
+    int slot = GuestSlotIndex();
+    if (me != 2 || slot < 0 || !coopSlotPath[0]) return;
+    FILE *f = _wfopen(coopSlotPath, L"wb");
+    if (!f) return;
+    fprintf(f, "%d %s\n", slot, hostName[0] ? hostName : "?");
+    fclose(f);
+}
+
+static void HookSlotFill(void *menu, void *slot, int index)
+{
+    realSlotFill(menu, slot, index);
+    char line[160] = "", nick[96] = "";
+    int at = -1;
+    FILE *f = _wfopen(coopSlotPath, L"rb");
+    if (f) { if (!fgets(line, sizeof line, f)) line[0] = 0; fclose(f); }
+    if (sscanf(line, "%d %95[^\r\n]", &at, nick) != 2 || at != index) return;
+    DWORD find = ExeRva(RVA_FindChild), cast = ExeRva(RVA_DynCast), set = ExeRva(RVA_LabelSetText),
+          rw = ExeRva(RVA_RttiWidget), rl = ExeRva(RVA_RttiLabel);
+    if (!find || !cast || !set || !rw || !rl) return;
+    __try
+    {
+        if (*(int *)slot == 0) return;   /* empty (deleted since) */
+        char *list = *(char **)((char *)menu + 0x40);
+        char *first = *(char **)(list + 0x3c8), *last = *(char **)(list + 0x3d0);
+        if (index < 0 || index >= (last - first) / 16) return;
+        void *button = *(void **)(first + index * 16);
+        __declspec(align(16)) View v = { "name", 4 };
+        void *child = button ? ((FindChild_t)(base + find))(button, &v) : NULL;
+        char *label = child ? (char *)((DynCast_t)(base + cast))(child, 0, base + rw, base + rl, 0) : NULL;
+        if (!label) return;
+        const char *old = "";
+        char *text = *(char **)(label + 0x570);
+        if (text)
+        {
+            text += 0x28;
+            old = *(size_t *)(text + 0x18) >= 16 ? *(const char **)text : text;
+        }
+        static char out[512];
+        _snprintf(out, sizeof out - 1, "Co-op with %s - %.380s", nick, old);
+        out[sizeof out - 1] = 0;
+        if (strncmp(old, "Co-op with ", 11) == 0) return;   /* already marked */
+        v.p = out;
+        v.n = strlen(out);
+        ((LabelSetText_t)(base + set))(label, &v);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { NetLog("# ERROR: main menu: the co-op slot could not be marked"); }
+}
+
 static void *InlineHook(DWORD steamRva, const unsigned char *expected, int n, void *hook)
 {
     DWORD rva = ExeRva(steamRva);
@@ -3020,6 +3200,7 @@ static void SetFrom(const char *text)
     int ends = 0;
     char where[16] = "battle";
     if (sscanf(text, "%lld %d %15s", &offset, &ends, where) < 1 || offset <= 0) return;
+    loaderSave = 1;
     NetTcpSetFrom(offset);
     endsArrived = ends;   /* the host counts turn ends from its game start */
     /* map: a save from between missions — the guest enters the next mission with the host (it waits for its scene). */
@@ -3040,6 +3221,77 @@ static void SetSharedSave(const char *utf8)
  *   info <text>                                (host: game data + mods fingerprint for the guest's loader, "getinfo")
  * read once and renamed to swh2_net_session.used.txt, so the next start of the game is single-player. Gives the same
  * words as a test control file: host = "record host <port>", join = "replay connect <address:port>". */
+static int steamMode;                    /* session "steam host" (1) / "steam join <lobby|user id>" (2) */
+static unsigned long long steamId;
+static char sessionInfo[1024];
+#define STEAM_GUEST_PORT 27016           /* the guest's local end of the Steam pipe (steamnet.c) */
+
+/* The guest's slot when no loader said ("slot" line): swh2_coop_profile.txt "guestslot=N" (0-based, default the
+ * last of 3) in the most recently saved Steam account's Save000 (GOG: <data>\Save000). */
+static void DefaultGuestSlot(const wchar_t *dir)
+{
+    int slot = 2;
+    wchar_t path[MAX_PATH], best[MAX_PATH] = L"";
+    _snwprintf(path, MAX_PATH, L"%s\\swh2_coop_profile.txt", dir);
+    FILE *f = _wfopen(path, L"r");
+    if (f)
+    {
+        char line[256];
+        while (fgets(line, sizeof line, f)) if (strncmp(line, "guestslot=", 10) == 0) slot = atoi(line + 10);
+        fclose(f);
+    }
+    if (slot < 0 || slot > 99) slot = 2;
+    FILETIME newest = {0};
+    WIN32_FIND_DATAW fd;
+    _snwprintf(path, MAX_PATH, L"%s\\*", dir);
+    HANDLE h = FindFirstFileW(path, &fd);
+    if (h != INVALID_HANDLE_VALUE)
+    {
+        do
+        {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || !iswdigit(fd.cFileName[0])) continue;
+            WIN32_FILE_ATTRIBUTE_DATA a;
+            _snwprintf(path, MAX_PATH, L"%s\\%s\\Save000", dir, fd.cFileName);
+            if (GetFileAttributesExW(path, GetFileExInfoStandard, &a) && CompareFileTime(&a.ftLastWriteTime, &newest) > 0)
+            {
+                newest = a.ftLastWriteTime;
+                wcscpy(best, path);
+            }
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    if (!best[0]) _snwprintf(best, MAX_PATH, L"%s\\Save000", dir);
+    _snwprintf(guestSlotPath, MAX_PATH, L"%s\\savegame_%03d.dat", best, slot);
+}
+
+/* No session file, but Steam started the game with "+connect_lobby <id>" (the host's "Join game" in the friends list,
+ * an invite): a guest session through Steam, the nickname from the loader's profile. */
+static int SteamLaunchSession(const wchar_t *dir, char *word, char *net, char *arg)
+{
+    unsigned long long lobby = SteamNetLaunchLobby();
+    if (!lobby) return 0;
+    wchar_t path[MAX_PATH];
+    _snwprintf(path, MAX_PATH, L"%s\\swh2_coop_profile.txt", dir);
+    FILE *f = _wfopen(path, L"r");
+    if (f)
+    {
+        char line[256];
+        while (fgets(line, sizeof line, f))
+        {
+            line[strcspn(line, "\r\n")] = 0;
+            if (strncmp(line, "name=", 5) == 0 && line[5]) SetName(myName, line + 5);
+        }
+        fclose(f);
+    }
+    if (!myName[0] && SteamNetPersona()[0]) SetName(myName, SteamNetPersona());   /* never opened the loader's window */
+    steamMode = 2;
+    steamId = lobby;
+    strcpy(word, "replay");
+    strcpy(net, "connect");
+    sprintf(arg, "127.0.0.1:%d", STEAM_GUEST_PORT);
+    return 1;
+}
+
 static int ReadSession(const wchar_t *dir, char *word, char *net, char *arg)
 {
     wchar_t path[MAX_PATH], used[MAX_PATH];
@@ -3054,9 +3306,11 @@ static int ReadSession(const wchar_t *dir, char *word, char *net, char *arg)
         line[strcspn(line, "\r\n")] = 0;
         if (strncmp(line, "name ", 5) == 0) { SetName(myName, line + 5); continue; }
         if (strncmp(line, "save ", 5) == 0) { SetSharedSave(line + 5); continue; }
-        if (strncmp(line, "info ", 5) == 0) { NetTcpSetInfo(line + 5); continue; }
+        if (strncmp(line, "info ", 5) == 0) { NetTcpSetInfo(line + 5); strncpy(sessionInfo, line + 5, sizeof sessionInfo - 1); continue; }
         if (strncmp(line, "from ", 5) == 0) { SetFrom(line + 5); continue; }
         if (strncmp(line, "slot ", 5) == 0) { MultiByteToWideChar(CP_UTF8, 0, line + 5, -1, guestSlotPath, MAX_PATH); continue; }
+        if (strcmp(line, "steam host") == 0) { steamMode = 1; continue; }
+        if (strncmp(line, "steam join ", 11) == 0) { steamMode = 2; steamId = _strtoui64(line + 11, NULL, 10); continue; }
         if (sscanf(line, "%15s %127s", what, value) != 2) continue;
         if (_stricmp(what, "host") == 0) { strcpy(word, "record"); strcpy(net, "host"); strcpy(arg, value); ok = 1; }
         if (_stricmp(what, "join") == 0) { strcpy(word, "replay"); strcpy(net, "connect"); strcpy(arg, value); ok = 1; }
@@ -3081,6 +3335,10 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     realSimUpdate = (SimUpdate_t)InlineHook(RVA_SimUpdate, simUpdate, sizeof simUpdate, (void *)HookSimUpdate);
     static const unsigned char popupShow[] = { 0x40,0x55,0x53,0x56,0x57,0x41,0x56,0x48,0x8d,0xac,0x24,0xc0,0xfe,0xff,0xff };
     realPopupShow = (PopupShow_t)InlineHook(RVA_PopupShow, popupShow, sizeof popupShow, (void *)HookPopupShow);
+    /* Always too: the co-op slot's mark in the main menu (also in single-player starts). */
+    _snwprintf(coopSlotPath, MAX_PATH, L"%s\\swh2_coop_slot.txt", dir);
+    static const unsigned char slotFill[] = { 0x40,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57,0x48,0x8d,0xac,0x24,0xe0,0xfc,0xff,0xff };
+    realSlotFill = (SlotFill_t)InlineHook(RVA_SlotFill, slotFill, sizeof slotFill, (void *)HookSlotFill);
     if (!Enabled()) return;
 
     wchar_t cfg[MAX_PATH];
@@ -3115,7 +3373,8 @@ void NetInstall(char *exeBase, const wchar_t *dir)
         }
         fclose(f);
     }
-    else if (!ReadSession(dir, word, net, arg)) return;   /* no network game this time: single-player, nothing hooked */
+    else if (!ReadSession(dir, word, net, arg) && !SteamLaunchSession(dir, word, net, arg)) return;   /* single-player, nothing hooked */
+    if (steamMode == 2 && !guestSlotPath[0]) DefaultGuestSlot(dir);
     if (_stricmp(word, "replay") == 0) wanted = NET_REPLAY;
     guest = wanted == NET_REPLAY && !autoplay;
     char *bindAddr = "";
@@ -3176,6 +3435,12 @@ void NetInstall(char *exeBase, const wchar_t *dir)
     if (hostPort > 0)
         NetLog(NetTcpHost(bindAddr, hostPort, outPath) ? "# host: guests connect to %s port %d" : "# ERROR: host on %s port %d not started",
                bindAddr[0] ? bindAddr : "any address,", hostPort);
+    if (steamMode == 1 && hostPort > 0)
+        NetLog(SteamNetHost(hostPort, myName, sessionInfo, 1) ? "# host: Steam lobby for friends (Join game in the Steam friends list, swh2_steam.log)"
+                                                              : "# ERROR: host: no Steam here (GOG copy?): guests join by address only");
+    if (steamMode == 2 && live)
+        NetLog(SteamNetJoin(steamId, guestPort) ? "# guest: through Steam (%llu, swh2_steam.log), slot %d" : "# ERROR: guest: no Steam here (%llu): no connection, slot %d",
+               steamId, GuestSlotIndex() + 1);
     if (live && !NetTcpGuest(arg, guestPort, replayPath)) NetLog("# ERROR: no network thread for the guest");
 
     if (me)

@@ -2,7 +2,7 @@
 # ends as LF, so the same sources give the same id on every PC (git may check them out with CRLF or LF).
 $sha = [Security.Cryptography.SHA256]::Create()
 $text = ''
-foreach ($f in 'swh2coop.c', 'netplay.c', 'nettcp.c', 'exemap.c', 'netplay.h', 'map_gog.h') {
+foreach ($f in 'swh2coop.c', 'netplay.c', 'nettcp.c', 'steamnet.c', 'exemap.c', 'netplay.h', 'steamnet.h', 'map_gog.h') {
     $text += $f + "`n" + [IO.File]::ReadAllText((Join-Path $PSScriptRoot $f)).Replace("`r", '')
 }
 -join ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text)) | ForEach-Object { $_.ToString('X2') })

@@ -37,6 +37,8 @@ public static class NetSession
         /// <summary>Guest: fetch the host's save before the game starts, into <see cref="GuestSlot"/> (0-based).</summary>
         public bool GetSave = true;
         public int GuestSlot = SaveBanks.GameSlots - 1;
+        /// <summary>Host: a Steam lobby too (session "steam host", steamnet.c): friends join from the Steam friends list.</summary>
+        public bool Steam = true;
         /// <summary>Host: listen only on this address ("127.0.0.1": tests on one PC, no firewall question); not kept.</summary>
         public string Bind = "";
     }
@@ -59,6 +61,7 @@ public static class NetSession
                 case "share": if (int.TryParse(v, out int share)) p.ShareSlot = share; break;
                 case "getsave": p.GetSave = v != "0"; break;
                 case "guestslot": if (int.TryParse(v, out int gs) && gs >= 0) p.GuestSlot = gs; break;
+                case "steam": p.Steam = v != "0"; break;
             }
         }
         return p;
@@ -68,7 +71,7 @@ public static class NetSession
     {
         Directory.CreateDirectory(NetTest.Dir);
         File.WriteAllLines(ProfileFile, [$"name={p.Name}", $"mode={(p.Host ? "host" : "join")}", $"port={p.Port}", $"address={p.Address}",
-            $"share={p.ShareSlot}", $"getsave={(p.GetSave ? 1 : 0)}", $"guestslot={p.GuestSlot}"]);
+            $"share={p.ShareSlot}", $"getsave={(p.GetSave ? 1 : 0)}", $"guestslot={p.GuestSlot}", $"steam={(p.Steam ? 1 : 0)}"]);
     }
 
     /// <summary>A nickname the dll and the game's text can carry: printable, no spaces at the ends, at most 20 characters.</summary>
@@ -126,6 +129,12 @@ public static class NetSession
             }
             else sb.AppendLine("No save to give the guest (no used slot yet): the guest has to bring a copy of your save.");
             lines.Add($"info {Fingerprint(game)}");
+            if (p.Steam && game.Store != "GOG")
+            {
+                lines.Add("steam host");
+                sb.AppendLine("Through Steam too: a friend right-clicks you in the Steam friends list → Join game (or you invite them from the");
+                sb.AppendLine("Steam overlay, Shift+Tab). No address, no port forwarding, no VPN. Their game must have NE Co-op applied.");
+            }
         }
         else
         {

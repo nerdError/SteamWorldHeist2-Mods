@@ -128,7 +128,10 @@ Co-op (network) — mod Coop, experimental
     the guest's follows it live; the guest's moves go to the host.
   - The crew is split: 1st crewmate host, 2nd guest, 3rd host… Each can select only their own. Nicknames show
     over the bots, the portraits get the owner's colour, the screen shows the connection and whose move it is.
-  - Over the internet: forward the TCP port (27015) to the host's PC, or use a virtual LAN (Radmin VPN, ZeroTier,
+  - Easiest over the internet (both Steam copies): the host keeps "Through Steam too" ticked; the guest right-clicks
+    the host in the Steam friends list → Join game (or accepts the host's invite). No address, no VPN: Steam starts
+    the guest's game, it takes the host's save into its slot by itself (the old one goes to a save bank).
+  - Otherwise: forward the TCP port (27015) to the host's PC, or use a virtual LAN (Radmin VPN, ZeroTier,
     Tailscale). The network game is for that one start of the game; a normal start plays alone.
   - Easiest: the host goes into the battle first, then the guest joins and clicks Continue — it lands in the same
     battle. The host can't move until the guest is in. Next mission: the guest restarts and joins again.

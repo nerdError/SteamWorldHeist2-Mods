@@ -84,6 +84,7 @@ static void (*NU_InitRelayNetworkAccess)(void *);
 static bool (*NU_SetGlobalConfigValueInt32)(void *, int, int);
 static bool (*NU_SetGlobalCallback_ConnStatus)(void *, void (*)(void *));
 static void (*Msg_Release)(void *);
+static void (*NU_SetDebugOutputFunction)(void *, int, void (*)(int, const char *));
 static void (*RegisterCallback)(void *, int);
 static Iface_t getUser, getFriends, getMM, getUtils, getSockets, getNUtils, getApps;
 static HMODULE api;
@@ -113,7 +114,7 @@ static u64 incomingPeer[MAX_PIPES];
 static int nincoming;
 static volatile LONG state, stopping;
 static HANDLE thread;
-static int role;                                   /* 1 host, 2 guest */
+static int role;                                   /* bits: 1 host, 2 guest (both: steam_probe.c, one process) */
 static int tcpPort, lobbyType = 1;
 static u64 lobby, hostId, me, launchLobby;
 static volatile LONG64 joinRequest;
@@ -184,6 +185,7 @@ static int Resolve(void)
     ok &= !!GET(NU_SetGlobalConfigValueInt32, "SteamAPI_ISteamNetworkingUtils_SetGlobalConfigValueInt32");
     ok &= !!GET(NU_SetGlobalCallback_ConnStatus, "SteamAPI_ISteamNetworkingUtils_SetGlobalCallback_SteamNetConnectionStatusChanged");
     ok &= !!GET(Msg_Release, "SteamAPI_SteamNetworkingMessage_t_Release");
+    GET(NU_SetDebugOutputFunction, "SteamAPI_ISteamNetworkingUtils_SetDebugOutputFunction");   /* optional */
     ok &= !!GET(RegisterCallback, "SteamAPI_RegisterCallback");
     return ok;
 }
@@ -240,7 +242,7 @@ static void OnConnStatus(void *cb)
     HConn conn = *(HConn *)p, ls = *(HConn *)(p + CB_LISTEN);
     int st = *(int *)(p + CB_STATE);
     u64 who = ((Identity *)(p + CB_IDENTITY))->u.steamID;
-    if (role != 1 || !listenSock || ls != listenSock || st != ST_CONNECTING) return;
+    if (!(role & 1) || !listenSock || ls != listenSock || st != ST_CONNECTING) return;
     if (!InLobby(who))
     {
         NS_CloseConnection(sockets, conn, 0, "not in the lobby", false);
@@ -254,6 +256,9 @@ static void OnConnStatus(void *cb)
     LeaveCriticalSection(&lock);
     Log("guest %llu (%s) connecting: accept %d", who, Friends_GetFriendPersonaName(friends, who), r);
 }
+
+/* Steam networking's own messages (why a connection failed) go to our log. */
+static void SteamDebug(int type, const char *text) { Log("steam(%d): %s", type, text); }
 
 /* ---- the bridge ---- */
 static int ConnState(HConn c)
@@ -436,12 +441,13 @@ static DWORD WINAPI Bridge(LPVOID unused)
             NU_InitRelayNetworkAccess(nutils);
             NU_SetGlobalConfigValueInt32(nutils, CFG_SEND_BUFFER, 8 * 1024 * 1024);   /* a save file fits at once */
             NU_SetGlobalCallback_ConnStatus(nutils, OnConnStatus);
+            if (NU_SetDebugOutputFunction) NU_SetDebugOutputFunction(nutils, 4, SteamDebug);   /* warnings and worse */
             Log("Steam ready: %llu (%s), app %u", me, myName, Utils_GetAppID(utils));
         }
         NS_RunCallbacks(sockets);
-        if (role == 1) HostSetup();
-        else if (!hostId && lobby) GuestSetup();
-        if (role == 1)
+        if (role & 1) HostSetup();
+        if ((role & 2) && !hostId && lobby) GuestSetup();
+        if (role & 1)
         {
             EnterCriticalSection(&lock);
             for (int i = 0; i < nincoming; i++)
@@ -463,7 +469,7 @@ static DWORD WINAPI Bridge(LPVOID unused)
             nincoming = 0;
             LeaveCriticalSection(&lock);
         }
-        if (role == 2 && hostId && localListen != INVALID_SOCKET)
+        if ((role & 2) && hostId && localListen != INVALID_SOCKET)
         {
             SOCKET s = accept(localListen, NULL, NULL);
             if (s != INVALID_SOCKET)
@@ -473,7 +479,12 @@ static DWORD WINAPI Bridge(LPVOID unused)
                 id.size = 8;
                 id.u.steamID = hostId;
                 HConn c = NS_ConnectP2P(sockets, &id, VPORT, 0, NULL);
-                if (!c || !AddPipe(c, s, hostId)) { closesocket(s); if (c) NS_CloseConnection(sockets, c, 0, "", false); }
+                if (!c || !AddPipe(c, s, hostId))
+                {
+                    Log("ERROR: local connection: no P2P connection to the host (%u)", c);
+                    closesocket(s);
+                    if (c) NS_CloseConnection(sockets, c, 0, "", false);
+                }
                 else Log("local connection -> P2P %u to the host", c);
             }
         }
@@ -499,7 +510,8 @@ static DWORD WINAPI Bridge(LPVOID unused)
 static int Start(void)
 {
     WSADATA w;
-    if (!api || thread || WSAStartup(MAKEWORD(2, 2), &w)) return 0;
+    if (thread) return 1;   /* host and guest in one process (tests): one bridge does both */
+    if (!api || WSAStartup(MAKEWORD(2, 2), &w)) return 0;
     InterlockedExchange(&state, STEAM_WAITING);
     thread = CreateThread(NULL, 0, Bridge, NULL, 0, NULL);
     return thread != NULL;
@@ -538,8 +550,8 @@ int SteamNetAvailable(void) { return api != NULL; }
 
 int SteamNetHost(int port, const char *nickname, const char *fingerprint, int type)
 {
-    if (role) return 0;
-    role = 1;
+    if (role & 1) return 0;
+    role |= 1;
     tcpPort = port;
     lobbyType = type;
     if (nickname) strncpy(nick, nickname, sizeof nick - 1);
@@ -550,8 +562,8 @@ int SteamNetHost(int port, const char *nickname, const char *fingerprint, int ty
 
 int SteamNetJoin(u64 id, int localPort)
 {
-    if (role || !id) return 0;
-    role = 2;
+    if ((role & 2) || !id) return 0;
+    role |= 2;
     /* Lobby ids have the "chat" account type (4) in bits 52..55, users 1. */
     if (((id >> 52) & 0xf) == 1) hostId = id;
     else lobby = id;
@@ -571,19 +583,21 @@ int SteamNetJoin(u64 id, int localPort)
     u_long nb = 1;
     ioctlsocket(localListen, FIONBIO, &nb);
     Log("guest: %s %llu, local port %d", lobby ? "lobby" : "host user", id, localPort);
-    if (hostId) InterlockedExchange(&state, STEAM_LOBBY);
-    return Start();
+    int ok = Start();
+    if (ok && hostId) InterlockedExchange(&state, STEAM_LOBBY);   /* a user id: no lobby to join */
+    return ok;
 }
 
 int SteamNetState(void) { return (int)state; }
 u64 SteamNetLobby(void) { return lobby; }
 u64 SteamNetMe(void) { return me; }
 const char *SteamNetMyName(void) { return myName; }
+const char *SteamNetPersona(void) { if (api) Ifaces(); return myName; }
 const char *SteamNetPeerName(void) { return peerName; }
 const char *SteamNetLobbyInfo(void) { return lobbyInfo; }
 u64 SteamNetLaunchLobby(void) { return launchLobby; }
 u64 SteamNetJoinRequest(void) { return (u64)InterlockedExchange64(&joinRequest, 0); }
-void SteamNetInviteDialog(void) { if (friends && lobby && role == 1) Friends_ActivateGameOverlayInviteDialog(friends, lobby); }
+void SteamNetInviteDialog(void) { if (friends && lobby && (role & 1)) Friends_ActivateGameOverlayInviteDialog(friends, lobby); }
 
 int SteamNetFriendsHosting(SteamNetFriend *out, int max)
 {

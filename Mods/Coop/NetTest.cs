@@ -148,7 +148,7 @@ public static class NetTest
     /// the pause menu's Load checkpoint): its dll asks for a save, the guest's is to quit and join from it.</param>
     /// <param name="rejoinSec">The guest quits to the main menu this long into its battle (autopilot "quit"); its dll is to
     /// take the host's latest save of the battle, Continue by itself and replay on from there (compared from that save).</param>
-    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0, int afterSec = 0, bool next = false, bool mapQuit = false, int winSec = 0, int desyncSec = 0, int checkpointSec = 0)
+    public static string RunNet(GameInstall host, GameInstall guest, int slot, int port, int timeoutSec, int stallSec, out bool differs, bool guestPlays = false, bool shots = false, string[]? names = null, int dropSec = 0, bool late = false, int rejoinSec = 0, int afterSec = 0, bool next = false, bool mapQuit = false, int winSec = 0, int desyncSec = 0, int checkpointSec = 0, bool menuJoin = false)
     {
         differs = true;
         if (GameInstall.AnyRunning) throw new InvalidOperationException("Close every copy of the game first.");
@@ -161,7 +161,7 @@ public static class NetTest
         if (guestPlays) { Directory.CreateDirectory(GuestDir); File.Copy(RecordLog, Path.Combine(GuestDir, "swh2_net_guestplay.log"), true); }
         var account0 = Account() ?? throw new InvalidOperationException("No game saves found.");
         File.WriteAllText(ControlFile, $"autoplay host 127.0.0.1:{port}\n" + (names is [var hostName, ..] ? $"name {hostName}\n" : "") +
-            (late || rejoinSec > 0 || desyncSec > 0 || checkpointSec > 0 || next || mapQuit ? $"save {account0.SlotPath(slot)}\n" : ""));   // this PC only: no firewall question
+            (late || menuJoin || rejoinSec > 0 || desyncSec > 0 || checkpointSec > 0 || next || mapQuit ? $"save {account0.SlotPath(slot)}\n" : ""));   // this PC only: no firewall question
         // --next: after the lost mission the host loads the checkpoint (its battle again, a new save there), the guest goes
         // to the world map: its dll is to see the host's new battle, quit to the main menu from the map and Continue into it.
         var hostScript = DefaultAutoScript(slot).ToList();
@@ -188,7 +188,9 @@ public static class NetTest
             $"slot {guestSlot}\n" +
             (dropSec > 0 ? $"drop {dropSec}\n" : "");
         File.WriteAllText(Path.Combine(GuestDir, "swh2_net.txt"), guestControl);
-        var guestScript = DefaultAutoScript(slot).ToList();
+        // --menu-join: as a guest that Steam's "Join game" started (no loader, no "from"): nothing pressed in the menu —
+        // its dll is to fetch the host's save there, bank the slot's old file, put the save in and Continue by itself.
+        var guestScript = menuJoin ? new List<string> { "popups on", "cutscenes on" } : DefaultAutoScript(slot).ToList();
         if (rejoinSec > 0) guestScript.AddRange(new[] { $"wait {rejoinSec * 1000}", "quit" });
         if (next) guestScript.AddRange(toMap);
         if (mapQuit) guestScript.AddRange(toMap.Concat(new[] { "wait 30000", "quit" }));
@@ -263,7 +265,7 @@ public static class NetTest
                         File.AppendAllText(Path.Combine(dir, "swh2_cheats_cmd.txt"), $"{DateTime.UtcNow:HHmmssfff} {DateTimeOffset.UtcNow.ToUnixTimeSeconds()} {cheat}\n");
                     sb.AppendLine(next ? $"Cheats {winSec} s into the battle: host \"mission {NextMission}\", guest \"win\"." : $"Cheat \"win\" sent to both {winSec} s into the battle.");
                 }
-                if (size > 0 && overAt == null && (next ? ReadShared(log).Contains("# joining the host's battle") : ReadShared(log).Contains("# mission over"))) overAt = DateTime.Now;
+                if (size > 0 && overAt == null && (next || menuJoin ? ReadShared(log).Contains("# joining the host's battle") : ReadShared(log).Contains("# mission over"))) overAt = DateTime.Now;
                 if (overAt != null && (DateTime.Now - overAt.Value).TotalSeconds >= Math.Max(3, afterSec))
                 {
                     end = "the guest's mission over (" + (ReadShared(log).Contains("# mission over: victory") ? "victory" : "crew lost") + ")" +
@@ -295,7 +297,7 @@ public static class NetTest
                 sb.AppendLine($"Connection broken by the test {dropSec} s after connecting: the guest connected again " +
                               $"{ReadShared(GuestReplayedLog).Split('\n').Count(l => l.StartsWith("# net: connected to the host again", StringComparison.Ordinal))} time(s) in the mission.");
             string record = RecordLog, replayed = GuestReplayedLog;
-            if (rejoinSec > 0 || desyncSec > 0 || checkpointSec > 0 || next)
+            if (rejoinSec > 0 || desyncSec > 0 || checkpointSec > 0 || next || menuJoin)
             {
                 // Compared from the host's save the guest came back with: the part of its log after the rejoin.
                 var text = ReadShared(GuestReplayedLog);

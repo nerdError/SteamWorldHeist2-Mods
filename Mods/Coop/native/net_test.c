@@ -1,7 +1,15 @@
 /* Offline test of the netplay recorder (netplay.c) on a fake exe image: native\test.cmd (not part of the mod). */
 #include "netplay.c"
 #include "nettcp.c"
-#include "exemap.c"   /* never initialised: identity map (Steam addresses) */
+#include "exemap.c"
+/* steamnet.c: no Steam in the offline test (its static names clash with the ones included above). */
+int SteamNetAvailable(void) { return 0; }
+int SteamNetHost(int p, const char *n, const char *i, int t) { (void)p; (void)n; (void)i; (void)t; return 0; }
+int SteamNetJoin(unsigned long long id, int p) { (void)id; (void)p; return 0; }
+unsigned long long SteamNetLaunchLobby(void) { return 0; }
+unsigned long long SteamNetJoinRequest(void) { return 0; }
+const char *SteamNetLobbyInfo(void) { return ""; }
+const char *SteamNetPersona(void) { return ""; }   /* never initialised: identity map (Steam addresses) */
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)

@@ -24,7 +24,13 @@ with this mod applied). One player hosts, the other joins by IP address.
    (default 3; what was there is kept as a save bank), then starts the guest's game. Both load that slot and enter the
    same mission. The guest's game waits for the host's. The host saved later? The guest closes the game and joins again.
 
-Over the internet the guest has to reach the host's TCP port: forward it on the host's router, or both join a
+**Through Steam** (both play the Steam copy): the host keeps **Through Steam too** ticked and starts as usual. The
+guest doesn't need the loader: in the Steam friends list right-click the host → **Join game** (or accept the host's
+invite from the Steam overlay). Steam starts the guest's game, the game gets the host's save into slot 3 (what was
+there goes to a save bank, `auto coop <time>`) and joins the host's battle. No address, no port, no VPN — Steam
+relays the connection. A guest whose game already runs is restarted by it (not during a battle).
+
+Without Steam (GOG copy) the guest has to reach the host's TCP port: forward it on the host's router, or both join a
 virtual LAN (Radmin VPN, ZeroTier, Tailscale) and use its address. Windows asks the host once whether the game may
 use the network — allow it.
 
@@ -90,7 +96,13 @@ Not done yet: more than 2 players, Steam invites (instead of an IP address).
    было — сохраняется в банк) и запускает игру гостя. Оба загружают этот слот и входят в одну миссию. Игра гостя ждёт
    игру хоста. Хост потом сохранился? Гость закрывает игру и подключается заново.
 
-Через интернет гость должен достучаться до TCP-порта хоста: пробросьте его на роутере хоста или оба зайдите в
+**Через Steam** (у обоих копия из Steam): хост оставляет галочку **Through Steam too** и запускает как обычно.
+Гостю загрузчик не нужен: в списке друзей Steam правый клик на хоста → **Присоединиться к игре** (или принять
+приглашение хоста из оверлея Steam). Steam запускает игру гостя, игра кладёт сейв хоста в слот 3 (что там было — в
+банк сохранений `auto coop <время>`) и входит в бой хоста. Ни адреса, ни порта, ни VPN — связь идёт через Steam.
+Уже запущенную игру гостя это перезапустит (не во время боя).
+
+Без Steam (копия GOG) гость должен достучаться до TCP-порта хоста: пробросьте его на роутере хоста или оба зайдите в
 виртуальную сеть (Radmin VPN, ZeroTier, Tailscale) и используйте её адрес. Windows один раз спросит хоста, можно ли
 игре в сеть, — разрешите.
 

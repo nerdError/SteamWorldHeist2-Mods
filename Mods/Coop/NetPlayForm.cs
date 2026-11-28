@@ -14,6 +14,7 @@ public sealed class NetPlayForm : Form
     readonly NumericUpDown _port = new() { Minimum = 1, Maximum = 65535, Value = NetSession.DefaultPort, Width = 90 };
     readonly TextBox _address = new() { Width = 260 };
     readonly ComboBox _share = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    readonly CheckBox _steam = new() { Text = "Through Steam too: friends click Join game in the Steam friends list (no IP, no VPN)", AutoSize = true, Anchor = AnchorStyles.Left };
     readonly CheckBox _getSave = new() { Text = "Get the host's save first, into my slot", AutoSize = true, Anchor = AnchorStyles.Left };
     readonly NumericUpDown _guestSlot = new() { Minimum = 1, Maximum = SaveBanks.GameSlots, Width = 60 };
     readonly TextBox _out = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, Font = new Font("Consolas", 9F) };
@@ -38,6 +39,8 @@ public sealed class NetPlayForm : Form
         foreach (var s in slots.Where(s => s.Used)) _share.Items.Add(new ShareItem(s.Index, $"slot {s.Index + 1} — saved {s.Modified:yyyy-MM-dd HH:mm}"));
         _share.SelectedItem = _share.Items.Cast<ShareItem>().FirstOrDefault(i => i.Slot == p.ShareSlot) ?? _share.Items[0];
         _getSave.Checked = p.GetSave;
+        _steam.Checked = p.Steam;
+        if (_game?.Store == "GOG") { _steam.Checked = false; _steam.Text = "Through Steam: not with the GOG copy (it has no Steam)"; }
         _guestSlot.Maximum = Math.Max(SaveBanks.GameSlots, Math.Max(slots.Count, p.GuestSlot + 1));
         _guestSlot.Value = p.GuestSlot + 1;
         // The two sit in different rows (containers), so WinForms doesn't group them: each one unticks the other.
@@ -56,6 +59,7 @@ public sealed class NetPlayForm : Form
         top.Controls.Add(Row(Caption("Your nickname:"), _name));
         top.Controls.Add(Row(_host, Caption("port:"), _port));
         top.Controls.Add(Row(Indent(), Caption("give the guest my save:"), _share));
+        top.Controls.Add(Row(Indent(), _steam));
         top.Controls.Add(Row(_join, Caption("host's address:"), _address, Hint("e.g. 192.168.1.20 or 26.1.2.3:27015")));
         top.Controls.Add(Row(Indent(), _getSave, _guestSlot, Hint("(what is there now is kept as a save bank)")));
         var start = new Button { Text = "Start the game", AutoSize = true, Font = new Font(Font, FontStyle.Bold) };
@@ -73,7 +77,10 @@ public sealed class NetPlayForm : Form
 
         Show(p.Host
             ? "Your addresses (give one to the other player):" + Environment.NewLine + string.Join(Environment.NewLine, NetSession.LocalAddresses().Select(a => "    " + a))
-            : "The host starts their game first. Then enter the host's address and click Start the game: your loader gets the host's save, then starts your game.");
+            : "The host starts their game first. Then enter the host's address and click Start the game: your loader gets the host's save, then starts your game." +
+              Environment.NewLine + Environment.NewLine + "Host through Steam: no address needed — in the Steam friends list right-click the host → Join game " +
+              "(or accept the host's invite). Steam starts your game, it gets the host's save into your slot " + (p.GuestSlot + 1) +
+              " by itself (what was there goes to a save bank) and joins the host's battle.");
     }
 
     void UpdateEnabled()
@@ -81,6 +88,7 @@ public sealed class NetPlayForm : Form
         _port.Enabled = _host.Checked;
         _address.Enabled = _join.Checked;
         _share.Enabled = _host.Checked;
+        _steam.Enabled = _host.Checked && _game?.Store != "GOG";
         _getSave.Enabled = _join.Checked;
         _guestSlot.Enabled = _join.Checked && _getSave.Checked;
     }
@@ -94,6 +102,7 @@ public sealed class NetPlayForm : Form
     {
         Name = _name.Text, Host = _host.Checked, Port = (int)_port.Value, Address = _address.Text.Trim(),
         ShareSlot = (_share.SelectedItem as ShareItem)?.Slot ?? -1, GetSave = _getSave.Checked, GuestSlot = (int)_guestSlot.Value - 1,
+        Steam = _steam.Checked,
     };
 
     GameInstall RequireGame() => _game ?? throw new InvalidOperationException("No game folder set in the loader.");

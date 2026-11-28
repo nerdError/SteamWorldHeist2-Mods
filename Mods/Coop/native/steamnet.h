@@ -20,6 +20,7 @@ int SteamNetState(void);                     /* STEAM_* */
 unsigned long long SteamNetLobby(void);      /* host: its lobby; guest: the joined one */
 unsigned long long SteamNetMe(void);
 const char *SteamNetMyName(void);
+const char *SteamNetPersona(void);           /* the Steam name now, if Steam is up already ("" = not yet) */
 const char *SteamNetPeerName(void);          /* guest: the host's nick (lobby data); host: the last guest's persona */
 const char *SteamNetLobbyInfo(void);         /* guest: the host's "info" (mods fingerprint) */
 unsigned long long SteamNetLaunchLobby(void);/* "+connect_lobby <id>" this game was started with (0 = none) */

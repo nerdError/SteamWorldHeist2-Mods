@@ -65,10 +65,11 @@ public sealed partial class CoopMod : IModPlugin
         "tutorial_coop_net_guest_lost", "tutorial_coop_net_guest_lost_page1", "tutorial_coop_net_host_left", "tutorial_coop_net_host_left_page1",
         "tutorial_coop_net_host_lost", "tutorial_coop_net_host_lost_page1",
         "coop_net_refused_cell", "coop_net_refused_gone", "coop_net_refused_notyours", "coop_net_refused_bad",
+        "tutorial_coop_net_version", "tutorial_coop_net_version_page1",
     ];
 
     /// <summary>Notifications in the game's popup window (the dll's events, coop.lua netEvent): tutorials_popup.xml.</summary>
-    static readonly string[] Popups = ["guest_left", "guest_back", "guest_lost", "host_left", "host_lost"];
+    static readonly string[] Popups = ["guest_left", "guest_back", "guest_lost", "host_left", "host_lost", "version"];
 
     static void AddStrings(ModContext ctx)
     {
@@ -105,6 +106,8 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_refused_gone"] = "Not accepted by {1}",
             ["coop_net_refused_notyours"] = "Not accepted by {1}",
             ["coop_net_refused_bad"] = "Not accepted by {1}",
+            ["tutorial_coop_net_version"] = "Another NE Co-op version than {1}'s",
+            ["tutorial_coop_net_version_page1"] = "You and {1} have different versions of NE Co-op. The battle may go differently in the two games: install the same version on both PCs (the loader of the newer one, Apply to game).",
         };
         var ru = new Dictionary<string, string>
         {
@@ -139,6 +142,8 @@ public sealed partial class CoopMod : IModPlugin
             ["coop_net_refused_gone"] = "{1}: команда не принята",
             ["coop_net_refused_notyours"] = "{1}: команда не принята",
             ["coop_net_refused_bad"] = "{1}: команда не принята",
+            ["tutorial_coop_net_version"] = "Версия NE Co-op не как у {1}",
+            ["tutorial_coop_net_version_page1"] = "У тебя и у {1} разные версии NE Co-op. Бой в двух играх может пойти по-разному: поставьте одну версию на оба ПК (загрузчик новой версии, Apply to game).",
         };
         Dictionary<string, string> Full(Dictionary<string, string> t)
         {

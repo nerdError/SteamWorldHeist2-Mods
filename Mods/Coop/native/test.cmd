@@ -8,7 +8,7 @@ set "PATH=%PATH%;%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
 call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 set "OBJ=%TEMP%\swh2coop_test"
 if not exist "%OBJ%" mkdir "%OBJ%"
-cl /nologo /W4 /MT /Fo"%OBJ%\\" /Fe"%TEMP%\swh2coop_test.exe" "%~dp0test.c" "%~dp0netplay.c" "%~dp0nettcp.c" "%~dp0exemap.c" /link /NOLOGO >nul || exit /b 1
+cl /nologo /W4 /MT /Fo"%OBJ%\\" /Fe"%TEMP%\swh2coop_test.exe" "%~dp0test.c" "%~dp0netplay.c" "%~dp0nettcp.c" "%~dp0steamnet.c" "%~dp0exemap.c" /link /NOLOGO >nul || exit /b 1
 cl /nologo /W4 /MT /Fo"%OBJ%\\" /Fe"%TEMP%\swh2net_test.exe" "%~dp0net_test.c" /link /NOLOGO >nul || exit /b 1
 "%TEMP%\swh2coop_test.exe" || exit /b 1
 "%TEMP%\swh2net_test.exe"

@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "netplay.h"
+#include "steamnet.h"
 
 /* Source id (build.cmd: hash of the sources): the loaders of host and guest compare it (NetSession.DllId). The dll
  * bytes themselves differ between PCs built from the same sources (another compiler version). */
@@ -586,6 +587,7 @@ static void Install(void)
     _snwprintf(inputPath, MAX_PATH, L"%s\\swh2_coop_input.txt", dir);
     _snwprintf(blockedPath, MAX_PATH, L"%s\\swh2_coop_blocked.txt", dir);
     _snwprintf(logPath, MAX_PATH, L"%s\\swh2_coop_input.log", dir);
+    SteamNetInstall(dir);   /* Steam copy only: lobby / "Join game" (steamnet.c); before NetInstall, which reads +connect_lobby */
     NetInstall(base, dir);
     if (NetActive())
     {
